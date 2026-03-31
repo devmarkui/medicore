@@ -1,0 +1,266 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Appointments{% endblock %}
+{% block header_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-5">
+    <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Daily Schedule</h3>
+        <p class="text-sm text-slate-500">Review and manage appointments in real time.</p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <form method="get" action="{{ url_for('appointments.appointments_dashboard') }}" class="flex flex-col sm:flex-row gap-3">
+          <div>
+            <label class="text-xs font-semibold text-slate-500">Date</label>
+            <input type="date" name="date" value="{{ selected_date }}"
+                   class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" />
+          </div>
+          {% if not doctor_view %}
+          <div>
+            <label class="text-xs font-semibold text-slate-500">Doctor</label>
+            <select name="doctor_id" class="mt-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500">
+              <option value="">All Doctors</option>
+              {% for doctor in doctors %}
+                <option value="{{ doctor.id }}" {% if doctor.id|string == selected_doctor %}selected{% endif %}>{{ doctor.doctor_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+          <div class="flex items-end">
+            <button type="submit" class="rounded-lg bg-med-600 text-white px-4 py-2 text-sm hover:bg-med-700">Filter</button>
+          </div>
+        </form>
+        {% if not doctor_view %}
+        <a href="{{ url_for('appointments.appointment_book_form') }}" class="inline-flex items-center justify-center rounded-lg border border-med-600 text-med-700 px-4 py-2 text-sm hover:bg-med-50">Book Appointment</a>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 overflow-hidden">
+    <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+      <div>
+        <h4 class="text-base font-semibold text-slate-900">Appointments</h4>
+        <p class="text-sm text-slate-500">{{ selected_date }}</p>
+      </div>
+      {% if doctor_view %}
+      <div class="text-xs text-slate-500">
+        Viewing: {{ selected_range | default('today') | capitalize }}
+      </div>
+      {% endif %}
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-5 py-3 text-left font-semibold">Time</th>
+            <th class="px-5 py-3 text-left font-semibold">Patient</th>
+            <th class="px-5 py-3 text-left font-semibold">Doctor</th>
+            <th class="px-5 py-3 text-left font-semibold">Reason</th>
+            <th class="px-5 py-3 text-left font-semibold">Telehealth</th>
+            <th class="px-5 py-3 text-left font-semibold">Status</th>
+            {% if not doctor_view %}
+            <th class="px-5 py-3 text-left font-semibold">Actions</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for appointment in appointments %}
+          {% set status_color = {
+            'Scheduled': 'bg-amber-50 text-amber-700',
+            'Checked-In': 'bg-emerald-50 text-emerald-700',
+            'Completed': 'bg-slate-100 text-slate-600',
+            'Cancelled': 'bg-rose-50 text-rose-700'
+          } %}
+          <tr class="{% if appointment.status in status_color %}{{ status_color[appointment.status].split(' ')[0] }}{% endif %}">
+            <td class="px-5 py-3 font-medium text-slate-800">{{ appointment.appointment_time_display }}</td>
+            <td class="px-5 py-3">{{ appointment.patient_name }}</td>
+            <td class="px-5 py-3">{{ appointment.doctor_name }}</td>
+            <td class="px-5 py-3 text-slate-600">{{ appointment.reason_for_visit }}</td>
+            <td class="px-5 py-3">
+              {% if appointment.appointment_mode == 'Online' %}
+                {% if appointment.telehealth_link %}
+                  <a href="{{ appointment.telehealth_link }}" target="_blank" class="text-xs text-med-700">Join Link</a>
+                {% else %}
+                  <span class="text-xs text-slate-400">Pending</span>
+                {% endif %}
+              {% else %}
+                <form method="post" action="{{ url_for('telehealth.generate_link', appointment_id=appointment.appointment_id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                  <button type="submit" class="text-xs text-med-700">Generate Link</button>
+                </form>
+              {% endif %}
+            </td>
+            <td class="px-5 py-3">
+              <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold {{ status_color[appointment.status] }}">
+                {{ appointment.status }}
+              </span>
+            </td>
+            {% if not doctor_view %}
+            <td class="px-5 py-3">
+              <div class="flex flex-col gap-2">
+                <form method="post" action="{{ url_for('appointments.appointment_update_status', appointment_id=appointment.appointment_id) }}" class="flex items-center gap-2">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                  <select name="status" class="rounded-md border border-slate-300 px-2 py-1 text-xs">
+                    {% for status in status_options %}
+                      <option value="{{ status }}" {% if status == appointment.status %}selected{% endif %}>{{ status }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="text-xs font-semibold text-med-700 hover:text-med-600">Update</button>
+                </form>
+                <button
+                  type="button"
+                  class="text-xs font-semibold text-med-700 border border-med-100 rounded-md px-3 py-1 hover:bg-med-50 quick-sms-trigger"
+                  data-patient="{{ appointment.patient_name }}"
+                  data-sms-url="{{ url_for('reception.quick_sms', appointment_id=appointment.appointment_id) }}"
+                >
+                  Quick SMS
+                </button>
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-5 py-6 text-center text-slate-500">No appointments found for the selected filters.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div id="quick-sms-modal" class="fixed inset-0 z-40 hidden bg-black/40 backdrop-blur-sm">
+  <div class="mx-auto mt-20 w-full max-w-lg rounded-2xl bg-white shadow-xl border border-slate-200">
+    <div class="flex items-start justify-between border-b border-slate-100 px-5 py-4">
+      <div>
+        <p class="text-xs uppercase tracking-wide text-slate-400">Sending to</p>
+        <p id="quick-sms-patient" class="text-lg font-semibold text-slate-900">Patient</p>
+      </div>
+      <button type="button" id="quick-sms-close" class="text-slate-400 hover:text-slate-600">✕</button>
+    </div>
+    <div class="px-5 py-4 space-y-4">
+      <div>
+        <p class="text-xs font-semibold text-slate-500 mb-2">Templates</p>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <button type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-left text-sm text-slate-600 hover:border-med-200" data-template="Doctor is running approximately 15 minutes late. Thank you for waiting.">Doctor is running 15 mins late</button>
+          <button type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-left text-sm text-slate-600 hover:border-med-200" data-template="Please come to the front desk when you arrive so we can check you in.">Please come to the front desk</button>
+          <button type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-left text-sm text-slate-600 hover:border-med-200" data-template="We have an earlier slot available today. Reply YES to confirm if you would like it.">Earlier slot available</button>
+          <button type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-left text-sm text-slate-600 hover:border-med-200" data-template="Reminder: Please bring your insurance card and ID for today's visit.">Bring insurance reminder</button>
+        </div>
+      </div>
+      <form id="quick-sms-form" class="space-y-3">
+        <div>
+          <label for="quick-sms-message" class="text-xs font-semibold text-slate-500">Custom message</label>
+          <textarea id="quick-sms-message" class="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" rows="4" placeholder="Type update for the patient..."></textarea>
+        </div>
+        <div class="flex justify-end gap-3">
+          <button type="button" id="quick-sms-cancel" class="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">Cancel</button>
+          <button type="submit" id="quick-sms-send" class="rounded-lg bg-med-600 px-4 py-2 text-sm font-semibold text-white hover:bg-med-700">Send SMS</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="quick-sms-toast" class="fixed top-6 right-6 z-50 hidden rounded-lg border px-4 py-3 text-sm shadow-lg"></div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('quick-sms-modal');
+    const patientLabel = document.getElementById('quick-sms-patient');
+    const messageInput = document.getElementById('quick-sms-message');
+    const closeBtn = document.getElementById('quick-sms-close');
+    const cancelBtn = document.getElementById('quick-sms-cancel');
+    const form = document.getElementById('quick-sms-form');
+    const sendBtn = document.getElementById('quick-sms-send');
+    const toast = document.getElementById('quick-sms-toast');
+    let currentUrl = '';
+
+    const toggleToast = (message, isError = false) => {
+      toast.textContent = message;
+      toast.className = 'fixed top-6 right-6 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg ' + (isError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700');
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('hidden'), 3000);
+    };
+
+    const openModal = (patientName, url) => {
+      patientLabel.textContent = patientName;
+      currentUrl = url;
+      messageInput.value = '';
+      modal.classList.remove('hidden');
+      messageInput.focus();
+    };
+
+    const closeModal = () => {
+      modal.classList.add('hidden');
+      messageInput.value = '';
+      currentUrl = '';
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send SMS';
+    };
+
+    document.querySelectorAll('.quick-sms-trigger').forEach((button) => {
+      button.addEventListener('click', () => {
+        openModal(button.dataset.patient || 'Patient', button.dataset.smsUrl);
+      });
+    });
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        closeModal();
+      }
+    });
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    document.querySelectorAll('[data-template]').forEach((button) => {
+      button.addEventListener('click', () => {
+        messageInput.value = button.dataset.template;
+        messageInput.focus();
+      });
+    });
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!currentUrl) {
+        toggleToast('No appointment selected.', true);
+        return;
+      }
+      const message = messageInput.value.trim();
+      if (!message) {
+        toggleToast('Message is required.', true);
+        return;
+      }
+      try {
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'Sending...';
+        const response = await fetch(currentUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ message })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          toggleToast(payload.error || 'Unable to send SMS.', true);
+          sendBtn.disabled = false;
+          sendBtn.textContent = 'Send SMS';
+          return;
+        }
+        toggleToast('SMS queued for delivery.');
+        closeModal();
+      } catch (error) {
+        toggleToast('Network error while sending SMS.', true);
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'Send SMS';
+      }
+    });
+  });
+</script>
+{% endblock %}

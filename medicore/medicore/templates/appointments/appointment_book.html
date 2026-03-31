@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Book Appointment{% endblock %}
+{% block header_title %}Book Appointment{% endblock %}
+
+{% block content %}
+<section class="max-w-3xl">
+  <div class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="mb-6">
+      <h3 class="text-lg font-semibold text-slate-900">New Appointment</h3>
+      <p class="text-sm text-slate-500">Schedule a visit for a patient and doctor.</p>
+    </div>
+
+    <form method="post" action="{{ url_for('appointments.appointment_book_submit') }}" class="space-y-5">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Patient</label>
+        <select name="patient_id" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500">
+          <option value="">Select patient</option>
+          {% for patient in patients %}
+            <option value="{{ patient.patient_id }}">{{ patient.first_name }} {{ patient.last_name }} ({{ patient.nic_number }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Doctor</label>
+          <select name="doctor_id" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500">
+            <option value="">Select doctor</option>
+            {% for doctor in doctors %}
+              <option value="{{ doctor.id }}">{{ doctor.doctor_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Date</label>
+          <input type="date" name="appointment_date" value="{{ selected_date }}" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" />
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Time Slot</label>
+          <select name="appointment_time" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500">
+            <option value="">Select time</option>
+            {% for slot in time_slots %}
+              <option value="{{ slot }}">{{ slot }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Reason for visit</label>
+          <input type="text" name="reason_for_visit" maxlength="255" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500"
+                 placeholder="Consultation, follow-up, etc." />
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="{{ url_for('appointments.appointments_dashboard') }}" class="text-sm text-slate-600 hover:text-slate-900">Cancel</a>
+        <button type="submit" class="rounded-lg bg-med-600 text-white px-5 py-2 text-sm hover:bg-med-700">Book Appointment</button>
+      </div>
+    </form>
+  </div>
+</section>
+{% endblock %}

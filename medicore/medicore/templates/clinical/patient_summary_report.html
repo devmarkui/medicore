@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Patient Summary{% endblock %}
+{% block header_title %}Patient Summary Report{% endblock %}
+
+{% block content %}
+<style>
+  @media print {
+    body { background: white !important; }
+    header, nav, .no-print { display: none !important; }
+    main { padding: 0 !important; }
+    .print-page { box-shadow: none !important; border: none !important; }
+    .page-break { page-break-before: always; }
+    table { page-break-inside: auto; }
+    tr { page-break-inside: avoid; page-break-after: auto; }
+  }
+</style>
+
+<div class="space-y-6 print-page">
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-semibold text-slate-900">MediCore Medical Center</h2>
+        <p class="text-sm text-slate-500">Comprehensive Patient Summary</p>
+      </div>
+      <div class="text-sm text-slate-500">
+        Generated: {{ summary.generated_at.strftime('%Y-%m-%d %H:%M') if summary.generated_at else '' }}
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-base font-semibold text-slate-800">Patient demographics</h3>
+    <div class="mt-4 grid gap-4 md:grid-cols-2 text-sm text-slate-600">
+      <p><span class="font-semibold text-slate-800">Name:</span> {{ summary.patient.first_name }} {{ summary.patient.last_name }}</p>
+      <p><span class="font-semibold text-slate-800">Patient ID:</span> {{ summary.patient.patient_id }}</p>
+      <p><span class="font-semibold text-slate-800">NIC:</span> {{ summary.patient.nic_number }}</p>
+      <p><span class="font-semibold text-slate-800">DOB:</span> {{ summary.patient.date_of_birth }}</p>
+      <p><span class="font-semibold text-slate-800">Gender:</span> {{ summary.patient.gender }}</p>
+      <p><span class="font-semibold text-slate-800">Blood Group:</span> {{ summary.patient.blood_group or 'N/A' }}</p>
+      <p><span class="font-semibold text-slate-800">Phone:</span> {{ summary.patient.phone_number }}</p>
+      <p><span class="font-semibold text-slate-800">Email:</span> {{ summary.patient.email or 'N/A' }}</p>
+    </div>
+    <div class="mt-4 text-sm text-slate-600">
+      <p><span class="font-semibold text-slate-800">Allergies:</span> {{ summary.patient.allergies or 'None reported' }}</p>
+      <p><span class="font-semibold text-slate-800">Chronic conditions:</span> {{ summary.patient.chronic_conditions or 'None reported' }}</p>
+      <p><span class="font-semibold text-slate-800">Past surgeries:</span> {{ summary.patient.past_surgeries or 'None reported' }}</p>
+      <p><span class="font-semibold text-slate-800">Family history:</span> {{ summary.patient.family_history or 'None reported' }}</p>
+    </div>
+    {% if summary.insurance %}
+    <div class="mt-4 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
+      <p class="font-semibold text-slate-800">Insurance</p>
+      <p>Provider: {{ summary.insurance.provider_name }} · Policy: {{ summary.insurance.policy_number }}</p>
+      <p>Expiry: {{ summary.insurance.expiry_date or 'N/A' }}</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-base font-semibold text-slate-800">Vitals history</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left font-semibold">Date</th>
+            <th class="px-3 py-2 text-left font-semibold">BP</th>
+            <th class="px-3 py-2 text-left font-semibold">HR</th>
+            <th class="px-3 py-2 text-left font-semibold">Temp</th>
+            <th class="px-3 py-2 text-left font-semibold">Weight</th>
+            <th class="px-3 py-2 text-left font-semibold">Height</th>
+            <th class="px-3 py-2 text-left font-semibold">Recorded by</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for item in summary.vitals %}
+          <tr>
+            <td class="px-3 py-2">{{ item.record_date }}</td>
+            <td class="px-3 py-2">{{ item.blood_pressure or '—' }}</td>
+            <td class="px-3 py-2">{{ item.heart_rate or '—' }}</td>
+            <td class="px-3 py-2">{{ item.temperature or '—' }}</td>
+            <td class="px-3 py-2">{{ item.weight_kg or '—' }}</td>
+            <td class="px-3 py-2">{{ item.height_cm or '—' }}</td>
+            <td class="px-3 py-2">{{ item.recorded_by or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="px-3 py-4 text-center text-slate-500">No vitals recorded.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6 page-break">
+    <h3 class="text-base font-semibold text-slate-800">Consultation timeline</h3>
+    <div class="mt-4 space-y-4">
+      {% for consult in summary.consultations %}
+      <div class="rounded-xl border border-slate-200 p-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div>
+            <p class="text-sm font-semibold text-slate-800">{{ consult.chief_complaint or 'Consultation' }}</p>
+            <p class="text-xs text-slate-500">{{ consult.consultation_date }} · {{ consult.doctor_name or 'Doctor' }}</p>
+          </div>
+          <span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600">{{ consult.diagnosis or 'Diagnosis pending' }}</span>
+        </div>
+        {% if consult.clinical_notes %}
+        <p class="mt-2 text-sm text-slate-600">{{ consult.clinical_notes }}</p>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">No consultation records.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-base font-semibold text-slate-800">Prescriptions</h3>
+    <div class="mt-4 space-y-4">
+      {% for rx in summary.prescriptions %}
+      <div class="rounded-xl border border-slate-200 p-4">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div>
+            <p class="text-sm font-semibold text-slate-800">{{ rx.prescription_id }}</p>
+            <p class="text-xs text-slate-500">{{ rx.prescription_date }} · {{ rx.doctor_name or 'Doctor' }}</p>
+          </div>
+        </div>
+        {% if summary.prescription_items.get(rx.prescription_id) %}
+        <ul class="mt-2 text-sm text-slate-600 list-disc list-inside">
+          {% for item in summary.prescription_items.get(rx.prescription_id) %}
+          <li>{{ item.generic_name }} {{ item.strength }} — {{ item.dosage }} ({{ item.frequency }}, {{ item.duration_days }} days)</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if rx.general_instructions %}
+        <p class="mt-2 text-sm text-slate-600">Instructions: {{ rx.general_instructions }}</p>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">No prescriptions recorded.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-base font-semibold text-slate-800">Lab results</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left font-semibold">Order</th>
+            <th class="px-3 py-2 text-left font-semibold">Test</th>
+            <th class="px-3 py-2 text-left font-semibold">Result</th>
+            <th class="px-3 py-2 text-left font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for result in summary.lab_results %}
+          <tr>
+            <td class="px-3 py-2">{{ result.order_id }} ({{ result.order_date }})</td>
+            <td class="px-3 py-2">{{ result.test_name }}</td>
+            <td class="px-3 py-2">{{ result.result_value or '—' }}</td>
+            <td class="px-3 py-2">
+              <span class="rounded-full px-3 py-1 text-xs {% if result.is_abnormal %}bg-rose-50 text-rose-700{% else %}bg-emerald-50 text-emerald-700{% endif %}">
+                {{ 'Abnormal' if result.is_abnormal else 'Normal' }}
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="px-3 py-4 text-center text-slate-500">No lab results found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="no-print flex justify-end">
+    <button onclick="window.print()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Print Report</button>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Taxes & Departments{% endblock %}
+{% block header_title %}Taxes & Departments{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Tax Rules</h3>
+        <p class="text-sm text-slate-500">Manage VAT/SSCL rates and activation.</p>
+      </div>
+      <form method="post" action="{{ url_for('settings.add_tax_rule') }}" class="flex flex-wrap gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="text" name="tax_name" placeholder="Tax name" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input type="number" step="0.01" name="percentage" placeholder="%" class="rounded-lg border border-slate-300 px-3 py-2 text-sm w-24" />
+        <button type="submit" class="rounded-lg bg-med-600 px-4 py-2 text-sm text-white hover:bg-med-700">Add Tax</button>
+      </form>
+    </div>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left font-semibold">Tax</th>
+            <th class="px-4 py-2 text-left font-semibold">Percentage</th>
+            <th class="px-4 py-2 text-left font-semibold">Status</th>
+            <th class="px-4 py-2 text-left font-semibold">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for tax in tax_rules %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-slate-800">{{ tax.tax_name }}</td>
+            <td class="px-4 py-2">{{ tax.percentage }}%</td>
+            <td class="px-4 py-2">
+              <span class="rounded-full px-3 py-1 text-xs {% if tax.is_active %}bg-emerald-50 text-emerald-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ 'Active' if tax.is_active else 'Inactive' }}
+              </span>
+            </td>
+            <td class="px-4 py-2">
+              <form method="post" action="{{ url_for('settings.toggle_tax_rule', tax_id=tax.tax_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <button type="submit" class="text-sm text-med-700">Toggle</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="px-4 py-4 text-center text-slate-500">No tax rules configured.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Departments</h3>
+        <p class="text-sm text-slate-500">Manage clinic departments and availability.</p>
+      </div>
+      <form method="post" action="{{ url_for('settings.add_department') }}" class="flex flex-wrap gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="text" name="department_name" placeholder="Department" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <input type="text" name="description" placeholder="Description" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">Add Department</button>
+      </form>
+    </div>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left font-semibold">Department</th>
+            <th class="px-4 py-2 text-left font-semibold">Description</th>
+            <th class="px-4 py-2 text-left font-semibold">Status</th>
+            <th class="px-4 py-2 text-left font-semibold">Action</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for dept in departments %}
+          <tr>
+            <td class="px-4 py-2 font-medium text-slate-800">{{ dept.department_name }}</td>
+            <td class="px-4 py-2 text-slate-600">{{ dept.description or '—' }}</td>
+            <td class="px-4 py-2">
+              <span class="rounded-full px-3 py-1 text-xs {% if dept.status == 'Active' %}bg-emerald-50 text-emerald-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ dept.status }}
+              </span>
+            </td>
+            <td class="px-4 py-2">
+              <form method="post" action="{{ url_for('settings.toggle_department', department_id=dept.department_id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <button type="submit" class="text-sm text-med-700">Toggle</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="4" class="px-4 py-4 text-center text-slate-500">No departments configured.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

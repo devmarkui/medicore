@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-900">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Waiting Room Queue</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-full text-white">
+  <div class="min-h-full flex flex-col items-center justify-center p-8" id="queue-root">
+    <h1 class="text-4xl font-bold mb-8">Now Serving</h1>
+    <div id="queue-list" class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-5xl"></div>
+  </div>
+
+  <script>
+    const queueList = document.getElementById('queue-list');
+
+    const renderQueue = (data) => {
+      queueList.innerHTML = '';
+      if (!data.length) {
+        queueList.innerHTML = '<p class="text-xl text-slate-300">No active queues.</p>';
+        return;
+      }
+      data.forEach((item) => {
+        const card = document.createElement('div');
+        card.className = 'rounded-2xl bg-slate-800 p-6 flex items-center justify-between';
+        card.innerHTML = `
+          <div>
+            <p class="text-lg text-slate-300">${item.doctor_name}</p>
+            <p class="text-5xl font-bold">${item.queue_number}</p>
+          </div>
+          <span class="text-sm uppercase tracking-wide ${item.status === 'In Consultation' ? 'text-emerald-300' : 'text-amber-300'}">${item.status}</span>
+        `;
+        queueList.appendChild(card);
+      });
+    };
+
+    const fetchQueue = async () => {
+      const response = await fetch('/queue/display');
+      const data = await response.json();
+      renderQueue(data || []);
+    };
+
+    fetchQueue();
+    setInterval(fetchQueue, 10000);
+  </script>
+</body>
+</html>

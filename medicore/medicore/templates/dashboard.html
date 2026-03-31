@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Dashboard{% endblock %}
+{% block header_title %}Dashboard{% endblock %}
+
+{% block content %}
+<section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+  <article class="rounded-xl bg-white border border-slate-200 p-5">
+    <p class="text-sm text-slate-500">Total Patients Registered</p>
+    <p class="mt-3 text-2xl font-semibold text-slate-900">{{ stats.total_patients }}</p>
+  </article>
+
+  <article class="rounded-xl bg-white border border-slate-200 p-5">
+    <p class="text-sm text-slate-500">Appointments Today</p>
+    <p class="mt-3 text-2xl font-semibold text-slate-900">{{ stats.appointments_today }}</p>
+  </article>
+
+  <article class="rounded-xl bg-white border border-slate-200 p-5">
+    <p class="text-sm text-slate-500">Pending Lab Results</p>
+    <p class="mt-3 text-2xl font-semibold text-slate-900">{{ stats.pending_lab_results }}</p>
+  </article>
+
+  <article class="rounded-xl bg-white border border-slate-200 p-5">
+    <p class="text-sm text-slate-500">Today's Revenue (LKR)</p>
+    <p class="mt-3 text-2xl font-semibold text-slate-900">{{ stats.today_revenue_lkr }}</p>
+  </article>
+</section>
+{% endblock %}

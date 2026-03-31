@@ -1,0 +1,70 @@
+{% extends 'portal/portal_base.html' %}
+
+{% block title %}MediCore | Patient Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900">Hello, {{ portal_user.name or 'Patient' }}</h2>
+        <p class="text-sm text-slate-500">Here’s a snapshot of your upcoming care.</p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <a href="{{ url_for('portal.portal_book') }}" class="rounded-lg bg-med-600 px-4 py-2 text-sm font-medium text-white hover:bg-med-700">Book New Appointment</a>
+        <a href="{{ url_for('portal.portal_message') }}" class="rounded-lg border border-med-200 px-4 py-2 text-sm font-medium text-med-700">Message Clinic</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-base font-semibold text-slate-800">Next appointment</h3>
+    {% if upcoming %}
+      <div class="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+        <div>
+          <p class="text-sm text-slate-600">Dr. {{ upcoming.doctor_name }}</p>
+          <p class="text-lg font-semibold text-slate-900">{{ upcoming.appointment_date }} · {{ upcoming.appointment_time_display }}</p>
+          <p class="text-sm text-slate-500">Reason: {{ upcoming.reason_for_visit }}</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <a href="{{ url_for('portal.portal_book', appointment_id=upcoming.appointment_id) }}" class="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600">Reschedule</a>
+          <form method="post" action="{{ url_for('portal.portal_cancel_appointment', appointment_id=upcoming.appointment_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit" class="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">Cancel</button>
+          </form>
+        </div>
+      </div>
+    {% else %}
+      <p class="mt-3 text-sm text-slate-500">No upcoming appointments. Book a visit when you’re ready.</p>
+    {% endif %}
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-base font-semibold text-slate-800">Recent visits</h3>
+    <div class="mt-4 overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-4 py-2 text-left font-semibold">Date</th>
+            <th class="px-4 py-2 text-left font-semibold">Doctor</th>
+            <th class="px-4 py-2 text-left font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for visit in recent_visits %}
+          <tr>
+            <td class="px-4 py-2">{{ visit.appointment_date }} · {{ visit.appointment_time_display }}</td>
+            <td class="px-4 py-2">Dr. {{ visit.doctor_name }}</td>
+            <td class="px-4 py-2">{{ visit.status }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="px-4 py-4 text-center text-slate-500">No visit history yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends 'portal/portal_base.html' %}
+
+{% block title %}MediCore | My Records{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h2 class="text-lg font-semibold text-slate-900">My Health Records</h2>
+    <p class="text-sm text-slate-500">Access prescriptions, lab reports, and billing summaries.</p>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="flex flex-wrap gap-2" id="records-tabs">
+      <button type="button" class="tab-btn rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-med-700 bg-med-50" data-target="prescriptions-tab">Prescriptions</button>
+      <button type="button" class="tab-btn rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600" data-target="labs-tab">Lab Reports</button>
+      <button type="button" class="tab-btn rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600" data-target="billing-tab">Billing</button>
+    </div>
+
+    <div class="mt-6 space-y-6">
+      <div id="prescriptions-tab" class="tab-panel">
+        <div class="space-y-4">
+          {% for rx in prescriptions %}
+          <div class="rounded-xl border border-slate-200 p-4">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <p class="text-sm font-semibold text-slate-800">Prescription {{ rx.prescription_id }}</p>
+                <p class="text-xs text-slate-500">{{ rx.prescription_date }} · Dr. {{ rx.doctor_name or 'Staff' }}</p>
+              </div>
+            </div>
+            {% if rx.general_instructions %}
+            <p class="mt-2 text-sm text-slate-600">{{ rx.general_instructions }}</p>
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+            No prescriptions available.
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div id="labs-tab" class="tab-panel hidden">
+        <div class="space-y-4">
+          {% for result in lab_results %}
+          <div class="rounded-xl border border-slate-200 p-4">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <p class="text-sm font-semibold text-slate-800">{{ result.test_name }}</p>
+                <p class="text-xs text-slate-500">Order {{ result.order_id }} · {{ result.order_date }}</p>
+              </div>
+              <div class="flex items-center gap-2">
+                {% if result.report_file_path %}
+                <a href="{{ url_for('portal.portal_download_lab_report', result_id=result.result_id) }}" class="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">Download PDF</a>
+                {% endif %}
+                <span class="rounded-full px-3 py-1 text-xs {% if result.is_abnormal %}bg-rose-50 text-rose-700{% else %}bg-emerald-50 text-emerald-700{% endif %}">
+                  {{ 'Abnormal' if result.is_abnormal else 'Normal' }}
+                </span>
+              </div>
+            </div>
+            {% if result.result_value %}
+            <p class="mt-2 text-sm text-slate-600">Result: {{ result.result_value }}</p>
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+            No completed lab reports yet.
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div id="billing-tab" class="tab-panel hidden">
+        <div class="space-y-4">
+          {% for invoice in invoices %}
+          <div class="rounded-xl border border-slate-200 p-4">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+              <div>
+                <p class="text-sm font-semibold text-slate-800">Invoice {{ invoice.invoice_id }}</p>
+                <p class="text-xs text-slate-500">{{ invoice.created_at }}</p>
+              </div>
+              <div class="text-sm font-semibold text-slate-800">LKR {{ invoice.total_amount }}</div>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">Status: {{ invoice.status }}</p>
+          </div>
+          {% else %}
+          <div class="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+            No invoices available.
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabPanels = document.querySelectorAll('.tab-panel');
+  tabButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      tabButtons.forEach((btn) => btn.classList.remove('bg-med-50', 'text-med-700'));
+      tabButtons.forEach((btn) => btn.classList.add('text-slate-600'));
+      button.classList.add('bg-med-50', 'text-med-700');
+      button.classList.remove('text-slate-600');
+      tabPanels.forEach((panel) => panel.classList.add('hidden'));
+      const target = document.getElementById(button.dataset.target);
+      if (target) {
+        target.classList.remove('hidden');
+      }
+    });
+  });
+</script>
+{% endblock %}

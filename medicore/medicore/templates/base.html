@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+  <title>{% block title %}MediCore{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            med: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-full text-slate-800 antialiased">
+<div class="min-h-full">
+  <div class="flex min-h-screen">
+    <aside class="hidden md:flex md:w-64 md:flex-col bg-white border-r border-slate-200">
+      <div class="px-6 py-5 border-b border-slate-200">
+        <h1 class="text-xl font-semibold text-med-700">MediCore</h1>
+        <p class="text-xs text-slate-500 mt-1">Medical Management System</p>
+      </div>
+      <nav class="flex-1 px-4 py-4 space-y-1 text-sm">
+        {% set nav_items = [
+          ('dashboard', t.get('dashboard', 'Dashboard'), '/dashboard'),
+          ('patients', t.get('patients', 'Patients'), '/patients'),
+          ('staff', 'Staff', '/staff'),
+          ('appointments', t.get('appointments', 'Appointments'), '/appointments'),
+          ('queue', t.get('queue', 'Queue'), '/queue/manager'),
+          ('billing', t.get('billing', 'Billing'), '/billing'),
+          ('clinical', t.get('clinical', 'Clinical'), '/appointments/doctor'),
+          ('pharmacy', t.get('pharmacy', 'Pharmacy'), '/pharmacy/dashboard'),
+          ('lab', t.get('lab', 'Lab'), '/lab/dashboard'),
+          ('communications', t.get('communications', 'Communications'), '/communications'),
+          ('analytics', t.get('analytics', 'Analytics'), '/analytics'),
+          ('hr', t.get('hr_payroll', 'HR & Payroll'), '/hr'),
+          ('settings', t.get('settings', 'Settings'), '/settings')
+        ] %}
+        {% for key, label, href in nav_items %}
+          <a href="{{ href }}"
+             class="block rounded-lg px-3 py-2 transition {% if active_page == key %}bg-med-50 text-med-700 font-medium{% else %}text-slate-600 hover:bg-slate-100 hover:text-slate-900{% endif %}">
+            {{ label }}
+          </a>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <div class="flex-1 flex flex-col">
+      <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-900">{% block header_title %}{{ title or 'MediCore' }}{% endblock %}</h2>
+            <p class="text-sm text-slate-500">Secure healthcare operations</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <div>
+              <label class="sr-only">{{ t.get('language', 'Language') }}</label>
+              <select class="rounded-md border border-slate-300 px-2 py-1 text-xs"
+                      onchange="window.location.href='{{ request.path }}?lang=' + this.value">
+                <option value="en" {% if current_lang == 'en' %}selected{% endif %}>English</option>
+                <option value="si" {% if current_lang == 'si' %}selected{% endif %}>සිංහල</option>
+                <option value="ta" {% if current_lang == 'ta' %}selected{% endif %}>தமிழ்</option>
+              </select>
+            </div>
+            <div class="text-right">
+              <p class="text-sm font-medium text-slate-800">{{ current_user.username if current_user else 'Guest' }}</p>
+              <p class="text-xs text-slate-500">{{ current_user.role if current_user else '' }}</p>
+            </div>
+            {% if current_user %}
+            <form method="post" action="{{ url_for('auth.logout') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+              <button type="submit" class="rounded-lg bg-slate-900 text-white px-3 py-2 text-sm hover:bg-slate-700">Logout</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+      </header>
+
+      <main class="flex-1 p-4 sm:p-6">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="mb-4 space-y-2">
+              {% for category, message in messages %}
+                <div class="rounded-lg px-4 py-3 text-sm {% if category == 'error' %}bg-rose-50 text-rose-700 border border-rose-200{% else %}bg-emerald-50 text-emerald-700 border border-emerald-200{% endif %}">
+                  {{ message }}
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</div>
+
+{% include 'partials/staff_chat_widget.html' %}
+</body>
+</html>

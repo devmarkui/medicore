@@ -1,0 +1,26 @@
+<form method="post" action="{{ url_for('staff.staff_add') }}" class="space-y-4">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+  <div>
+    <label class="text-sm font-medium text-slate-700">Full Name</label>
+    <input name="full_name" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <div>
+    <label class="text-sm font-medium text-slate-700">Email</label>
+    <input type="email" name="email" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <div>
+    <label class="text-sm font-medium text-slate-700">Phone</label>
+    <input name="phone_number" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+  </div>
+  <div>
+    <label class="text-sm font-medium text-slate-700">Role</label>
+    <select name="role_id" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      {% for role in roles %}
+        <option value="{{ role.id }}">{{ role.role_name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="flex justify-end">
+    <button type="submit" class="rounded-lg bg-med-600 text-white px-4 py-2 text-sm hover:bg-med-700">Create Staff</button>
+  </div>
+</form>

@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Prescription {{ prescription.prescription_id }}{% endblock %}
+{% block header_title %}Prescription {{ prescription.prescription_id }}{% endblock %}
+
+{% block content %}
+<section class="rounded-2xl bg-white border border-slate-200 p-6 space-y-6">
+  <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-6">
+    <div>
+      <h3 class="text-xl font-semibold text-slate-900">MediCore Medical Center</h3>
+      <p class="text-sm text-slate-500">123 Health Avenue, Colombo</p>
+      <p class="text-sm text-slate-500">+94 11 123 4567</p>
+    </div>
+    <div class="text-sm text-slate-600">
+      <p><span class="font-semibold text-slate-800">Prescription:</span> {{ prescription.prescription_id }}</p>
+      <p><span class="font-semibold text-slate-800">Date:</span> {{ prescription.prescription_date.strftime('%Y-%m-%d') if prescription.prescription_date else '' }}</p>
+      <p><span class="font-semibold text-slate-800">Doctor:</span> {{ prescription.doctor_name }}</p>
+      <p class="text-xs text-slate-500">Reg No: SL-MED-0000</p>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="rounded-xl bg-slate-50 p-4">
+      <h4 class="text-sm font-semibold text-slate-700 mb-2">Patient</h4>
+      <p class="text-sm text-slate-800">{{ prescription.patient_name }}</p>
+      <p class="text-sm text-slate-500">Age: {{ patient_age if patient_age is not none else 'N/A' }}</p>
+      <p class="text-sm text-slate-500">Blood Group: {{ prescription.blood_group or 'N/A' }}</p>
+    </div>
+    <div class="rounded-xl bg-slate-50 p-4">
+      <h4 class="text-sm font-semibold text-slate-700 mb-2">General Instructions</h4>
+      <p class="text-sm text-slate-600">{{ prescription.general_instructions or 'None' }}</p>
+    </div>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm border border-slate-200">
+      <thead class="bg-slate-50 text-slate-500">
+        <tr>
+          <th class="px-4 py-2 text-left font-semibold">Medication</th>
+          <th class="px-4 py-2 text-left font-semibold">Dosage</th>
+          <th class="px-4 py-2 text-left font-semibold">Frequency</th>
+          <th class="px-4 py-2 text-left font-semibold">Duration</th>
+          <th class="px-4 py-2 text-left font-semibold">Instructions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-200">
+        {% for item in items %}
+        <tr>
+          <td class="px-4 py-2">{{ item.generic_name }} ({{ item.brand_name }}) {{ item.strength }}</td>
+          <td class="px-4 py-2">{{ item.dosage }}</td>
+          <td class="px-4 py-2">{{ item.frequency }}</td>
+          <td class="px-4 py-2">{{ item.duration_days }} days</td>
+          <td class="px-4 py-2">{{ item.special_instructions or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="flex items-center justify-between">
+    <p class="text-sm text-slate-500">Digital signature placeholder</p>
+    <button type="button" onclick="window.print()" class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100">Print</button>
+  </div>
+</section>
+{% endblock %}

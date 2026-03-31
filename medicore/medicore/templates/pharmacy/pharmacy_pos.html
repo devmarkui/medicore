@@ -1,0 +1,216 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Pharmacy POS{% endblock %}
+{% block header_title %}Pharmacy POS{% endblock %}
+
+{% block content %}
+<div class="space-y-6"
+  data-csrf-token="{{ csrf_token }}"
+  data-patient-id="{{ prescription.patient_id if prescription else '' }}"
+  data-prescription-id="{{ prescription.prescription_id if prescription else '' }}"
+  data-prefill-items='{{ prescription_items | tojson | safe }}'>
+  <section class="rounded-2xl bg-white border border-slate-200 p-5">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Dispense Prescription</h3>
+        <p class="text-sm text-slate-500">Scan or enter prescription ID to prefill.</p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <input type="text" id="prescription-input" placeholder="RX-24-0001" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        <button type="button" id="load-prescription" class="rounded-lg bg-med-600 text-white px-4 py-2 text-sm hover:bg-med-700">Load</button>
+        <a href="{{ url_for('pharmacy.pharmacy_pos') }}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm">Clear</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="lg:col-span-7 space-y-4">
+      <div class="rounded-2xl bg-white border border-slate-200 p-5">
+        <h4 class="text-sm font-semibold text-slate-700 mb-2">Search Drug</h4>
+        <div class="relative">
+          <input type="text" id="drug-search" placeholder="Search by generic or brand name" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <div id="drug-results" class="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg hidden"></div>
+        </div>
+      </div>
+
+      <div class="rounded-2xl bg-white border border-slate-200 p-5">
+        <h4 class="text-sm font-semibold text-slate-700 mb-4">Cart Items</h4>
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500">
+              <tr>
+                <th class="px-4 py-2 text-left font-semibold">Drug</th>
+                <th class="px-4 py-2 text-left font-semibold">Available</th>
+                <th class="px-4 py-2 text-left font-semibold">Qty</th>
+                <th class="px-4 py-2 text-left font-semibold">Price</th>
+                <th class="px-4 py-2 text-left font-semibold">Subtotal</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="cart-body" class="divide-y divide-slate-200"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="lg:col-span-5 space-y-4">
+      <div class="rounded-2xl bg-white border border-slate-200 p-5">
+        <h4 class="text-sm font-semibold text-slate-700 mb-3">Payment</h4>
+        <div class="space-y-3">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-500">Total</span>
+            <span id="total-display" class="text-lg font-semibold">LKR 0.00</span>
+          </div>
+          <div>
+            <label class="text-sm font-medium text-slate-700">Payment Method</label>
+            <select id="payment-method" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {% for method in payment_methods %}
+                <option value="{{ method }}">{{ method }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button id="checkout-btn" class="w-full rounded-lg bg-med-600 text-white py-2 text-sm hover:bg-med-700">Checkout & Print Bill</button>
+        </div>
+      </div>
+
+      {% if prescription %}
+      <div class="rounded-2xl bg-white border border-slate-200 p-5">
+        <h4 class="text-sm font-semibold text-slate-700 mb-3">Prescription Details</h4>
+        <p class="text-sm text-slate-600">{{ prescription.patient_name }}</p>
+        <p class="text-xs text-slate-500">{{ prescription.prescription_id }}</p>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+
+<script>
+  const state = {
+    cart: [],
+  };
+
+  const formatLkr = (value) => `LKR ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const cartBody = document.getElementById('cart-body');
+  const totalDisplay = document.getElementById('total-display');
+
+  const renderCart = () => {
+    cartBody.innerHTML = '';
+    let total = 0;
+    state.cart.forEach((item, index) => {
+      const subtotal = item.quantity * item.unit_price;
+      total += subtotal;
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="px-4 py-2 font-medium text-slate-800">${item.label}</td>
+        <td class="px-4 py-2 text-xs text-slate-500">${item.available}</td>
+        <td class="px-4 py-2">
+          <input type="number" min="1" value="${item.quantity}" class="w-20 rounded-md border border-slate-300 px-2 py-1 text-xs" />
+        </td>
+        <td class="px-4 py-2">${formatLkr(item.unit_price)}</td>
+        <td class="px-4 py-2">${formatLkr(subtotal)}</td>
+        <td class="px-2 py-2"><button class="text-xs text-rose-600">Remove</button></td>
+      `;
+      row.querySelector('input').addEventListener('input', (event) => {
+        item.quantity = Math.max(1, parseInt(event.target.value || '1', 10));
+        renderCart();
+      });
+      row.querySelector('button').addEventListener('click', () => {
+        state.cart.splice(index, 1);
+        renderCart();
+      });
+      cartBody.appendChild(row);
+    });
+    totalDisplay.textContent = formatLkr(total);
+  };
+
+  const addToCart = (item) => {
+    const existing = state.cart.find((row) => row.drug_id === item.drug_id);
+    if (existing) {
+      existing.quantity += 1;
+    } else {
+      state.cart.push({
+        drug_id: item.drug_id,
+        label: `${item.generic_name} (${item.brand_name}) ${item.strength}`,
+        available: item.total_stock,
+        unit_price: parseFloat(item.selling_price || '0'),
+        quantity: 1,
+      });
+    }
+    renderCart();
+  };
+
+  const drugInput = document.getElementById('drug-search');
+  const resultsBox = document.getElementById('drug-results');
+  let searchTimeout = null;
+
+  drugInput.addEventListener('input', (event) => {
+    const query = event.target.value.trim();
+    if (searchTimeout) clearTimeout(searchTimeout);
+    if (!query) {
+      resultsBox.classList.add('hidden');
+      return;
+    }
+    searchTimeout = setTimeout(async () => {
+      const response = await fetch(`/pharmacy/api/inventory-search?q=${encodeURIComponent(query)}`);
+      const data = await response.json();
+      resultsBox.innerHTML = '';
+      data.forEach((item) => {
+        const option = document.createElement('button');
+        option.type = 'button';
+        option.className = 'w-full text-left px-3 py-2 text-sm hover:bg-slate-100';
+        option.textContent = `${item.generic_name} (${item.brand_name}) ${item.strength} • Stock ${item.total_stock}`;
+        option.addEventListener('click', () => {
+          addToCart(item);
+          resultsBox.classList.add('hidden');
+          drugInput.value = '';
+        });
+        resultsBox.appendChild(option);
+      });
+      resultsBox.classList.toggle('hidden', !data.length);
+    }, 250);
+  });
+
+  document.getElementById('load-prescription').addEventListener('click', () => {
+    const rx = document.getElementById('prescription-input').value.trim();
+    if (rx) {
+      window.location.href = `/pharmacy/prescription/${encodeURIComponent(rx)}`;
+    }
+  });
+
+  const checkoutBtn = document.getElementById('checkout-btn');
+  checkoutBtn.addEventListener('click', async () => {
+    const wrapper = document.querySelector('[data-csrf-token]');
+    const payload = {
+      patient_id: wrapper.dataset.patientId || null,
+      prescription_id: wrapper.dataset.prescriptionId || null,
+      payment_method: document.getElementById('payment-method').value,
+      items: state.cart.map((item) => ({
+        drug_id: item.drug_id,
+        quantity: item.quantity,
+      })),
+      csrf_token: wrapper.dataset.csrfToken,
+    };
+
+    const response = await fetch('/pharmacy/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    if (response.ok) {
+      alert(`Sale completed. Total: ${formatLkr(parseFloat(result.total_amount))}`);
+      window.location.reload();
+    } else {
+      alert(result.error || 'Checkout failed');
+    }
+  });
+
+  const prefillItems = JSON.parse(document.querySelector('[data-prefill-items]').dataset.prefillItems || '[]');
+  if (prefillItems && prefillItems.length) {
+    prefillItems.forEach((item) => addToCart(item));
+  }
+
+  renderCart();
+</script>
+{% endblock %}

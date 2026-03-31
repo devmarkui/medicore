@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Two-Factor Authentication{% endblock %}
+{% block header_title %}Two-Factor Authentication{% endblock %}
+
+{% block content %}
+<section class="rounded-2xl bg-white border border-slate-200 p-6 space-y-6">
+  <div>
+    <h3 class="text-lg font-semibold text-slate-900">Protect your account</h3>
+    <p class="text-sm text-slate-500">Scan the QR code with Google Authenticator or any compatible TOTP app, then enter the 6-digit code to activate.</p>
+  </div>
+
+  <div class="flex flex-col md:flex-row gap-6">
+    <div class="flex-1 space-y-4">
+      <div class="rounded-xl border border-slate-200 p-4 text-center">
+        <p class="text-sm font-medium text-slate-600 mb-3">Scan this QR Code</p>
+        <img src="{{ qr_code_data }}" alt="2FA QR code" class="mx-auto w-48 h-48 border border-slate-200 rounded-lg" />
+        <p class="text-xs text-slate-500 mt-3">Account: <span class="font-semibold">{{ current_user.username }}</span></p>
+      </div>
+      <div class="rounded-xl border border-slate-200 p-4 bg-slate-50">
+        <p class="text-xs uppercase tracking-wide text-slate-500">Manual Setup Code</p>
+        <p class="font-mono text-base text-slate-900 mt-1 break-all">{{ secret }}</p>
+      </div>
+    </div>
+    <div class="flex-1 space-y-4">
+      <div class="rounded-xl border border-slate-200 p-4">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-sm font-semibold text-slate-800">Status</p>
+          <span class="text-xs px-2 py-1 rounded-full {% if is_enabled %}bg-emerald-50 text-emerald-700 border border-emerald-200{% else %}bg-amber-50 text-amber-700 border border-amber-200{% endif %}">
+            {% if is_enabled %}Enabled{% else %}Pending Activation{% endif %}
+          </span>
+        </div>
+        <p class="text-sm text-slate-500">2FA adds an additional verification step to keep staff accounts secure.</p>
+      </div>
+      <form method="post" action="{{ url_for('auth.verify_2fa') }}" class="space-y-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="hidden" name="context" value="enable" />
+        <div>
+          <label for="token" class="block text-sm font-medium text-slate-700 mb-1">Authenticator Code</label>
+          <input id="token" name="token" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-med-500 focus:border-med-500"
+                 placeholder="Enter 6-digit code" />
+        </div>
+        <button type="submit" class="w-full rounded-lg bg-med-600 text-white py-2.5 font-medium hover:bg-med-700 transition">
+          Verify &amp; Enable 2FA
+        </button>
+      </form>
+    </div>
+  </div>
+</section>
+{% endblock %}

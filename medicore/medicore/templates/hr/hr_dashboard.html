@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | HR Dashboard{% endblock %}
+{% block header_title %}HR Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-5">
+    <h3 class="text-lg font-semibold text-slate-900">HR Operations</h3>
+    <p class="text-sm text-slate-500">Manage attendance, leave, and payroll.</p>
+  </section>
+
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="rounded-2xl bg-white border border-slate-200 p-5 lg:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <h4 class="text-base font-semibold text-slate-900">Attendance</h4>
+        <form method="get">
+          <input type="date" name="date" value="{{ selected_date }}" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <button type="submit" class="rounded-lg bg-med-600 text-white px-3 py-2 text-sm ml-2">Go</button>
+        </form>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500">
+            <tr>
+              <th class="px-4 py-2 text-left font-semibold">Staff</th>
+              <th class="px-4 py-2 text-left font-semibold">Status</th>
+              <th class="px-4 py-2 text-left font-semibold">Clock In</th>
+              <th class="px-4 py-2 text-left font-semibold">Clock Out</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-200">
+            {% for row in attendance %}
+            <tr>
+              <td class="px-4 py-2">{{ row.staff_name }}</td>
+              <td class="px-4 py-2">{{ row.status }}</td>
+              <td class="px-4 py-2">{{ row.clock_in_time or '-' }}</td>
+              <td class="px-4 py-2">{{ row.clock_out_time or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="px-4 py-4 text-center text-slate-500">No attendance records.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="rounded-2xl bg-white border border-slate-200 p-5">
+      <h4 class="text-base font-semibold text-slate-900 mb-3">Leave Requests</h4>
+      <div class="space-y-3">
+        {% for request in leave_requests %}
+        <div class="rounded-lg border border-slate-200 p-3">
+          <p class="text-sm font-semibold text-slate-800">{{ request.staff_name }}</p>
+          <p class="text-xs text-slate-500">{{ request.start_date }} to {{ request.end_date }}</p>
+          <p class="text-xs text-slate-500">{{ request.leave_type }} • {{ request.status }}</p>
+          {% if request.status == 'Pending' %}
+          <form method="post" action="{{ url_for('hr.handle_leave_request', request_id=request.request_id, action='approve') }}" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button class="text-xs text-emerald-600">Approve</button>
+          </form>
+          <form method="post" action="{{ url_for('hr.handle_leave_request', request_id=request.request_id, action='reject') }}" class="inline ml-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button class="text-xs text-rose-600">Reject</button>
+          </form>
+          {% endif %}
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500">No leave requests.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-5">
+    <h4 class="text-base font-semibold text-slate-900 mb-3">Run Payroll</h4>
+    <form method="post" action="{{ url_for('hr.run_payroll') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="text-xs text-slate-500">Month</label>
+          <input type="number" name="month" min="1" max="12" value="{{ selected_date.split('-')[1] }}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-500">Year</label>
+          <input type="number" name="year" value="{{ selected_date.split('-')[0] }}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </div>
+        <div class="flex items-end">
+          <button type="submit" class="rounded-lg bg-med-600 text-white px-4 py-2 text-sm">Generate Payroll</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500">
+            <tr>
+              <th class="px-4 py-2 text-left font-semibold">Staff</th>
+              <th class="px-4 py-2 text-left font-semibold">Base Salary (LKR)</th>
+              <th class="px-4 py-2 text-left font-semibold">Bonuses (LKR)</th>
+              <th class="px-4 py-2 text-left font-semibold">Deductions (LKR)</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-200">
+            {% for member in staff %}
+            <tr>
+              <td class="px-4 py-2">{{ member.staff_name }}</td>
+              <td class="px-4 py-2"><input type="number" step="0.01" name="base_salary_{{ member.id }}" class="w-32 rounded-md border border-slate-300 px-2 py-1 text-xs" /></td>
+              <td class="px-4 py-2"><input type="number" step="0.01" name="bonuses_{{ member.id }}" class="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs" /></td>
+              <td class="px-4 py-2"><input type="number" step="0.01" name="deductions_{{ member.id }}" class="w-24 rounded-md border border-slate-300 px-2 py-1 text-xs" /></td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="px-4 py-4 text-center text-slate-500">No staff records found.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+  </section>
+</div>
+{% endblock %}

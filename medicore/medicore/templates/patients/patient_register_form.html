@@ -1,0 +1,273 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Patient Registration{% endblock %}
+{% block header_title %}Patient Registration{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+  <section class="rounded-2xl bg-white border border-slate-200 p-5 md:p-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Quick Channeling Registration</h3>
+        <p class="text-sm text-slate-500">Use phone number to find existing patients instantly or register a new one in seconds.</p>
+      </div>
+      <a href="{{ url_for('patients.patient_directory') }}" class="text-sm text-med-700">Back to directory</a>
+    </div>
+
+    <div id="lookup-status" class="mt-4 rounded-lg border px-3 py-2 text-sm bg-slate-50 border-slate-200 text-slate-600">
+      Enter phone number to start lookup.
+    </div>
+
+    <form id="quick-registration-form" method="post" action="{{ url_for('patients.patient_register_submit') }}" class="mt-4 space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="existing_patient_id" id="existing_patient_id" value="" />
+
+      <div>
+        <label for="phone_number" class="text-xs font-semibold text-slate-600">Phone Number</label>
+        <input
+          id="phone_number"
+          name="phone_number"
+          type="text"
+          inputmode="numeric"
+          maxlength="10"
+          required
+          autocomplete="off"
+          class="mt-1 w-full rounded-lg border-2 border-med-500 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-med-200"
+          placeholder="07XXXXXXXX"
+        />
+        <p id="phone-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label for="patient_name" class="text-xs font-semibold text-slate-600">Patient Name</label>
+          <input id="patient_name" name="patient_name" type="text" required maxlength="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Enter full name" />
+          <p id="name-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+        </div>
+        <div>
+          <label for="age" class="text-xs font-semibold text-slate-600">Age</label>
+          <input id="age" name="age" type="text" inputmode="numeric" required maxlength="3" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="0 - 120" />
+          <p id="age-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+        </div>
+      </div>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <div>
+          <label for="gender" class="text-xs font-semibold text-slate-600">Gender</label>
+          <select id="gender" name="gender" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Select Gender</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+          <p id="gender-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+        </div>
+        <div>
+          <label for="nic_number" class="text-xs font-semibold text-slate-600">NIC (Optional)</label>
+          <input id="nic_number" name="nic_number" type="text" maxlength="12" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm uppercase" placeholder="Old or new NIC" />
+          <p id="nic-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+        </div>
+      </div>
+
+      <div id="multiple-patient-box" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <p class="text-sm font-medium text-amber-800">Multiple patients found with this phone number. Select one:</p>
+        <div id="multiple-patient-list" class="mt-2 space-y-2"></div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-1">
+        <button type="button" id="clear-form-btn" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Clear</button>
+        <button type="submit" class="rounded-lg bg-med-600 px-5 py-2 text-sm font-medium text-white hover:bg-med-700">Save Patient</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<script>
+  (() => {
+    const form = document.getElementById('quick-registration-form');
+    const phoneInput = document.getElementById('phone_number');
+    const nameInput = document.getElementById('patient_name');
+    const ageInput = document.getElementById('age');
+    const genderInput = document.getElementById('gender');
+    const nicInput = document.getElementById('nic_number');
+    const existingPatientInput = document.getElementById('existing_patient_id');
+    const statusBox = document.getElementById('lookup-status');
+    const multipleBox = document.getElementById('multiple-patient-box');
+    const multipleList = document.getElementById('multiple-patient-list');
+    const clearBtn = document.getElementById('clear-form-btn');
+
+    const phoneError = document.getElementById('phone-error');
+    const nameError = document.getElementById('name-error');
+    const ageError = document.getElementById('age-error');
+    const genderError = document.getElementById('gender-error');
+    const nicError = document.getElementById('nic-error');
+
+    let debounceTimer;
+
+    const setStatus = (text, tone = 'neutral') => {
+      statusBox.textContent = text;
+      statusBox.className = 'mt-4 rounded-lg border px-3 py-2 text-sm';
+      if (tone === 'success') {
+        statusBox.classList.add('bg-emerald-50', 'border-emerald-200', 'text-emerald-700');
+      } else if (tone === 'warning') {
+        statusBox.classList.add('bg-amber-50', 'border-amber-200', 'text-amber-800');
+      } else if (tone === 'info') {
+        statusBox.classList.add('bg-sky-50', 'border-sky-200', 'text-sky-700');
+      } else {
+        statusBox.classList.add('bg-slate-50', 'border-slate-200', 'text-slate-600');
+      }
+    };
+
+    const clearFieldErrors = () => {
+      [phoneError, nameError, ageError, genderError, nicError].forEach((el) => {
+        el.classList.add('hidden');
+        el.textContent = '';
+      });
+    };
+
+    const showError = (el, message) => {
+      el.textContent = message;
+      el.classList.remove('hidden');
+    };
+
+    const clearPatientDataOnly = () => {
+      existingPatientInput.value = '';
+      nameInput.value = '';
+      ageInput.value = '';
+      genderInput.value = '';
+      nicInput.value = '';
+      multipleBox.classList.add('hidden');
+      multipleList.innerHTML = '';
+    };
+
+    const fillPatient = (patient) => {
+      existingPatientInput.value = patient.patient_id || '';
+      nameInput.value = patient.patient_name || '';
+      ageInput.value = (patient.age ?? '') + '';
+      genderInput.value = patient.gender || '';
+      nicInput.value = patient.nic || '';
+    };
+
+    const renderMultiple = (patients) => {
+      multipleList.innerHTML = '';
+      patients.forEach((patient) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'w-full rounded-lg border border-amber-200 bg-white p-2 text-left text-sm hover:bg-amber-100';
+        button.textContent = `${patient.patient_name || '-'} | NIC: ${patient.nic || '-'} | ${patient.gender || '-'} | Age: ${patient.age ?? '-'} | ID: ${patient.patient_id || '-'}`;
+        button.addEventListener('click', () => {
+          fillPatient(patient);
+          multipleBox.classList.add('hidden');
+          setStatus('Existing patient selected.', 'success');
+        });
+        multipleList.appendChild(button);
+      });
+      multipleBox.classList.remove('hidden');
+    };
+
+    const runLookup = async () => {
+      const digits = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+      phoneInput.value = digits;
+      clearFieldErrors();
+      if (digits.length < 3) {
+        clearPatientDataOnly();
+        setStatus('Enter at least 3 digits to search.', 'neutral');
+        return;
+      }
+
+      setStatus('Searching patients...', 'info');
+      try {
+        const response = await fetch(`{{ url_for('patients.patient_quick_lookup') }}?phone=${encodeURIComponent(digits)}`);
+        const payload = await response.json();
+
+        if (payload.status === 'single' && payload.patients.length === 1) {
+          fillPatient(payload.patients[0]);
+          multipleBox.classList.add('hidden');
+          setStatus('Existing patient found.', 'success');
+          return;
+        }
+        if (payload.status === 'multiple') {
+          clearPatientDataOnly();
+          renderMultiple(payload.patients || []);
+          setStatus('Multiple patients found.', 'warning');
+          return;
+        }
+        clearPatientDataOnly();
+        setStatus('New patient.', 'neutral');
+      } catch (_error) {
+        clearPatientDataOnly();
+        setStatus('Lookup failed. Please continue manual entry.', 'warning');
+      }
+    };
+
+    phoneInput.addEventListener('input', () => {
+      phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(runLookup, 500);
+    });
+
+    ageInput.addEventListener('input', () => {
+      ageInput.value = ageInput.value.replace(/\D/g, '').slice(0, 3);
+    });
+
+    nicInput.addEventListener('input', () => {
+      nicInput.value = nicInput.value.toUpperCase().replace(/\s/g, '');
+    });
+
+    clearBtn.addEventListener('click', () => {
+      form.reset();
+      clearPatientDataOnly();
+      clearFieldErrors();
+      setStatus('Enter phone number to start lookup.', 'neutral');
+      phoneInput.focus();
+    });
+
+    form.addEventListener('submit', (event) => {
+      clearFieldErrors();
+      let valid = true;
+      const phone = phoneInput.value.trim();
+      const name = nameInput.value.trim().replace(/\s+/g, ' ');
+      const age = ageInput.value.trim();
+      const nic = nicInput.value.trim();
+      const phonePattern = /^\d{10}$/;
+      const namePattern = /^[A-Za-z ]{2,}$/;
+      const nicPattern = /^(\d{9}[VvXx]|\d{12})$/;
+
+      nameInput.value = name;
+      if (!phonePattern.test(phone)) {
+        showError(phoneError, 'Phone number must be exactly 10 digits.');
+        valid = false;
+      }
+      if (!namePattern.test(name)) {
+        showError(nameError, 'Name must contain only letters and spaces (min 2 chars).');
+        valid = false;
+      }
+
+      const ageNumber = Number(age);
+      if (!/^\d+$/.test(age) || Number.isNaN(ageNumber) || ageNumber < 0 || ageNumber > 120) {
+        showError(ageError, 'Age must be a whole number between 0 and 120.');
+        valid = false;
+      }
+
+      if (!genderInput.value) {
+        showError(genderError, 'Please select gender.');
+        valid = false;
+      }
+
+      if (nic && !nicPattern.test(nic)) {
+        showError(nicError, 'NIC must be 12 digits or 9 digits + V/X.');
+        valid = false;
+      }
+
+      if (!valid) {
+        event.preventDefault();
+      }
+    });
+
+    setStatus('Enter phone number to start lookup.', 'neutral');
+    phoneInput.focus();
+  })();
+</script>
+{% endblock %}

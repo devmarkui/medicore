@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Staff Management{% endblock %}
+{% block header_title %}Staff Management{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-5">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Staff Directory</h3>
+        <p class="text-sm text-slate-500">Manage staff roles and access.</p>
+      </div>
+      <button type="button" class="rounded-lg bg-med-600 text-white px-4 py-2 text-sm hover:bg-med-700" onclick="document.getElementById('staff-modal').classList.remove('hidden')">Add New Staff</button>
+    </div>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-5 py-3 text-left font-semibold">Name</th>
+            <th class="px-5 py-3 text-left font-semibold">Email</th>
+            <th class="px-5 py-3 text-left font-semibold">Role</th>
+            <th class="px-5 py-3 text-left font-semibold">Phone</th>
+            <th class="px-5 py-3 text-left font-semibold">Status</th>
+            <th class="px-5 py-3 text-left font-semibold">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for member in staff %}
+          <tr>
+            <td class="px-5 py-3 font-medium text-slate-800">{{ member.full_name }}</td>
+            <td class="px-5 py-3">{{ member.email }}</td>
+            <td class="px-5 py-3">{{ member.role_name }}</td>
+            <td class="px-5 py-3">{{ member.phone_number }}</td>
+            <td class="px-5 py-3">
+              <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold {% if member.is_active %}bg-emerald-50 text-emerald-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ 'Active' if member.is_active else 'Inactive' }}
+              </span>
+            </td>
+            <td class="px-5 py-3">
+              <form method="post" action="{{ url_for('staff.staff_toggle_status', staff_id=member.id) }}" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <button class="text-xs text-med-700">Toggle Status</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-5 py-6 text-center text-slate-500">No staff records found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div id="staff-modal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-lg">
+    <div class="flex items-center justify-between mb-4">
+      <h4 class="text-lg font-semibold text-slate-900">Add Staff</h4>
+      <button type="button" class="text-slate-400" onclick="document.getElementById('staff-modal').classList.add('hidden')">✕</button>
+    </div>
+    {% include 'staff/staff_form.html' %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Audit Logs{% endblock %}
+{% block header_title %}Audit Logs{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-5">
+    <form method="get" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div>
+        <label class="text-xs text-slate-500">Action Type</label>
+        <select name="action_type" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="">All</option>
+          {% for action in action_types %}
+            <option value="{{ action }}" {% if filters.action_type == action %}selected{% endif %}>{{ action }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-slate-500">User ID</label>
+        <input type="text" name="user_id" value="{{ filters.user_id }}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-500">Start Date</label>
+        <input type="date" name="start_date" value="{{ filters.start_date }}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-500">End Date</label>
+        <input type="date" name="end_date" value="{{ filters.end_date }}" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div class="md:col-span-4 flex justify-end">
+        <button type="submit" class="rounded-lg bg-med-600 text-white px-4 py-2 text-sm hover:bg-med-700">Filter</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-5 py-3 text-left font-semibold">Time</th>
+            <th class="px-5 py-3 text-left font-semibold">User</th>
+            <th class="px-5 py-3 text-left font-semibold">Action</th>
+            <th class="px-5 py-3 text-left font-semibold">Table</th>
+            <th class="px-5 py-3 text-left font-semibold">Record</th>
+            <th class="px-5 py-3 text-left font-semibold">Details</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for log in logs %}
+          <tr>
+            <td class="px-5 py-3 text-xs text-slate-500">{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '' }}</td>
+            <td class="px-5 py-3">{{ log.user_name or log.user_id or 'System' }}</td>
+            <td class="px-5 py-3">{{ log.action_type }}</td>
+            <td class="px-5 py-3">{{ log.table_affected }}</td>
+            <td class="px-5 py-3">{{ log.record_id or '-' }}</td>
+            <td class="px-5 py-3">
+              <button type="button" class="text-sm font-semibold text-med-700" data-detail='{{ {"old": log.old_values, "new": log.new_values} | tojson | safe }}' onclick="openDetails(this)">View</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-5 py-6 text-center text-slate-500">No audit logs available.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div id="detail-modal" class="fixed inset-0 bg-slate-900/50 hidden items-center justify-center">
+  <div class="bg-white rounded-2xl p-6 w-full max-w-2xl">
+    <div class="flex items-center justify-between mb-4">
+      <h4 class="text-lg font-semibold text-slate-900">Audit Log Details</h4>
+      <button type="button" class="text-slate-400" onclick="closeDetails()">✕</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <h5 class="text-sm font-semibold text-slate-700">Old Values</h5>
+        <pre id="old-values" class="mt-2 text-xs bg-slate-50 rounded-lg p-3 overflow-auto"></pre>
+      </div>
+      <div>
+        <h5 class="text-sm font-semibold text-slate-700">New Values</h5>
+        <pre id="new-values" class="mt-2 text-xs bg-slate-50 rounded-lg p-3 overflow-auto"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const modal = document.getElementById('detail-modal');
+  const oldBox = document.getElementById('old-values');
+  const newBox = document.getElementById('new-values');
+
+  const openDetails = (button) => {
+    const detail = JSON.parse(button.dataset.detail || '{}');
+    oldBox.textContent = JSON.stringify(detail.old || {}, null, 2);
+    newBox.textContent = JSON.stringify(detail.new || {}, null, 2);
+    modal.classList.remove('hidden');
+  };
+
+  const closeDetails = () => {
+    modal.classList.add('hidden');
+  };
+</script>
+{% endblock %}

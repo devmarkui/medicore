@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="Referrer-Policy" content="strict-origin-when-cross-origin" />
+  <title>{% block title %}MediCore Patient Portal{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            med: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca'
+            }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="h-full text-slate-800 antialiased">
+<div class="min-h-full">
+  <header class="bg-white border-b border-slate-200">
+    <div class="mx-auto max-w-6xl px-4 sm:px-6 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-semibold text-med-700">MediCore Patient Portal</h1>
+        <p class="text-sm text-slate-500">Welcome, {{ portal_user.name or 'Patient' }}</p>
+      </div>
+      <nav class="flex flex-wrap items-center gap-3 text-sm">
+        <a href="{{ url_for('portal.portal_dashboard') }}" class="text-slate-600 hover:text-med-700">Dashboard</a>
+        <a href="{{ url_for('portal.portal_records') }}" class="text-slate-600 hover:text-med-700">My Records</a>
+        <a href="{{ url_for('portal.portal_book') }}" class="text-slate-600 hover:text-med-700">Book Appointment</a>
+        <a href="{{ url_for('portal.portal_message') }}" class="text-slate-600 hover:text-med-700">Message Clinic</a>
+        <a href="{{ url_for('portal.portal_logout') }}" class="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">Logout</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 sm:px-6 py-6">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-4 space-y-2">
+          {% for category, message in messages %}
+            <div class="rounded-lg px-4 py-3 text-sm {% if category == 'error' %}bg-rose-50 text-rose-700 border border-rose-200{% else %}bg-emerald-50 text-emerald-700 border border-emerald-200{% endif %}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

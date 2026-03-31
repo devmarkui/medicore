@@ -1,0 +1,9 @@
+Flask==3.0.3
+mysql-connector-python==9.0.0
+python-dotenv==1.0.1
+argon2-cffi==23.1.0
+gunicorn==22.0.0
+Flask-SocketIO==5.3.6
+pyotp==2.9.0
+qrcode==7.4.2
+Pillow==10.3.0

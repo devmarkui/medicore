@@ -1,0 +1,180 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Create Invoice{% endblock %}
+{% block header_title %}Create Invoice{% endblock %}
+
+{% block content %}
+{% set sscl_rate = 0 %}
+{% set vat_rate = 0 %}
+{% if tax_rules %}
+  {% for rule in tax_rules %}
+    {% if rule.tax_name|upper == 'SSCL' %}
+      {% set sscl_rate = rule.percentage %}
+    {% elif rule.tax_name|upper == 'VAT' %}
+      {% set vat_rate = rule.percentage %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
+<section class="max-w-5xl space-y-6"
+         data-tax-rate="{{ tax_rate }}"
+         data-sscl-rate="{{ sscl_rate }}"
+         data-vat-rate="{{ vat_rate }}">
+  <div class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h3 class="text-lg font-semibold text-slate-900">Invoice Details</h3>
+    <p class="text-sm text-slate-500 mb-6">Add line items and review totals before saving.</p>
+
+    <form method="post" action="{{ url_for('billing.billing_create_submit') }}" id="invoice-form" class="space-y-6">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Patient</label>
+        <select name="patient_id" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500">
+          <option value="">Select patient</option>
+          {% for patient in patients %}
+            <option value="{{ patient.patient_id }}" {% if patient.patient_id == selected_patient_id %}selected{% endif %}>
+              {{ patient.first_name }} {{ patient.last_name }} ({{ patient.nic_number }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-slate-700">Line Items</h4>
+          <button type="button" id="add-item" class="rounded-lg border border-med-600 text-med-700 px-3 py-1.5 text-sm hover:bg-med-50">Add Item</button>
+        </div>
+
+        <div id="line-items" class="space-y-3">
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-3 line-item">
+            <div class="md:col-span-6">
+              <label class="text-xs text-slate-500">Description</label>
+              <input type="text" name="item_description" required
+                     class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="text-xs text-slate-500">Qty</label>
+              <input type="number" name="item_quantity" value="1" min="1" required
+                     class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="text-xs text-slate-500">Unit Price (LKR)</label>
+              <input type="number" step="0.01" name="item_unit_price" value="0.00" required
+                     class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" />
+            </div>
+            <div class="md:col-span-2">
+              <label class="text-xs text-slate-500">Line Total</label>
+              <input type="text" name="item_line_total" value="0.00" readonly
+                     class="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Discount (LKR)</label>
+          <input type="number" step="0.01" name="discount_amount" value="0.00"
+                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-med-500" />
+        </div>
+        <div class="md:col-span-2">
+          <div class="rounded-xl bg-slate-50 p-4 space-y-2">
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-500">Subtotal</span>
+              <span id="subtotal-display">LKR 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-500">SSCL ({{ sscl_rate | round(2) }}%)</span>
+              <span id="sscl-display">LKR 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-500">VAT ({{ vat_rate | round(2) }}%)</span>
+              <span id="vat-display">LKR 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-500">Total Tax</span>
+              <span id="tax-display">LKR 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-sm">
+              <span class="text-slate-500">Discount</span>
+              <span id="discount-display">LKR 0.00</span>
+            </div>
+            <div class="flex items-center justify-between text-base font-semibold">
+              <span>Total</span>
+              <span id="total-display">LKR 0.00</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3">
+        <a href="{{ url_for('billing.billing_dashboard') }}" class="text-sm text-slate-600 hover:text-slate-900">Cancel</a>
+        <button type="submit" class="rounded-lg bg-med-600 text-white px-5 py-2 text-sm hover:bg-med-700">Create Invoice</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<script>
+  const taxNode = document.querySelector('[data-tax-rate]');
+  const taxRate = parseFloat(taxNode.dataset.taxRate || '0');
+  const ssclRate = parseFloat(taxNode.dataset.ssclRate || '0') / 100;
+  const vatRate = parseFloat(taxNode.dataset.vatRate || '0') / 100;
+  const lineItemsContainer = document.getElementById('line-items');
+
+  const formatLkr = (value) => `LKR ${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const updateTotals = () => {
+    let subtotal = 0;
+    document.querySelectorAll('.line-item').forEach((item) => {
+      const qty = parseFloat(item.querySelector('[name="item_quantity"]').value || '0');
+      const price = parseFloat(item.querySelector('[name="item_unit_price"]').value || '0');
+      const lineTotal = qty * price;
+      item.querySelector('[name="item_line_total"]').value = lineTotal.toFixed(2);
+      subtotal += lineTotal;
+    });
+
+    const discountInput = document.querySelector('[name="discount_amount"]');
+    const discount = parseFloat(discountInput.value || '0');
+    let ssclAmount = 0;
+    let vatAmount = 0;
+    if (ssclRate > 0 || vatRate > 0) {
+      ssclAmount = subtotal * ssclRate;
+      vatAmount = (subtotal + ssclAmount) * vatRate;
+    } else {
+      vatAmount = subtotal * taxRate;
+    }
+    const taxAmount = ssclAmount + vatAmount;
+    const total = subtotal + taxAmount - discount;
+
+  document.getElementById('subtotal-display').textContent = formatLkr(subtotal);
+  document.getElementById('sscl-display').textContent = formatLkr(ssclAmount);
+  document.getElementById('vat-display').textContent = formatLkr(vatAmount);
+  document.getElementById('tax-display').textContent = formatLkr(taxAmount);
+  document.getElementById('discount-display').textContent = formatLkr(discount);
+  document.getElementById('total-display').textContent = formatLkr(total);
+  };
+
+  document.getElementById('add-item').addEventListener('click', () => {
+    const newItem = document.querySelector('.line-item').cloneNode(true);
+    newItem.querySelectorAll('input').forEach((input) => {
+      if (input.name === 'item_quantity') {
+        input.value = 1;
+      } else if (input.name === 'item_unit_price' || input.name === 'item_line_total') {
+        input.value = '0.00';
+      } else {
+        input.value = '';
+      }
+    });
+    lineItemsContainer.appendChild(newItem);
+  });
+
+  document.addEventListener('input', (event) => {
+    if (event.target.closest('.line-item') || event.target.name === 'discount_amount') {
+      updateTotals();
+    }
+  });
+
+  updateTotals();
+</script>
+{% endblock %}

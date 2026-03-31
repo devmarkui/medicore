@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Patient Directory{% endblock %}
+{% block header_title %}Patient Directory{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div>
+        <h3 class="text-lg font-semibold text-slate-900">Find a patient</h3>
+        <p class="text-sm text-slate-500">Search by Patient ID, NIC, name, or phone number.</p>
+      </div>
+      <a href="{{ url_for('patients.patient_register') }}" class="inline-flex items-center justify-center rounded-lg bg-med-600 px-4 py-2 text-sm font-medium text-white hover:bg-med-700">Register Patient</a>
+    </div>
+    <form method="get" action="{{ url_for('patients.patient_directory') }}" class="mt-4">
+      <div class="flex flex-col md:flex-row gap-3">
+        <div class="flex-1">
+          <input type="text" name="search" value="{{ search }}" placeholder="Search by NIC, name, phone, or ID" class="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm focus:border-med-500 focus:ring-1 focus:ring-med-500" />
+        </div>
+        <div class="flex gap-2">
+          <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">Search</button>
+          {% if search %}
+          <a href="{{ url_for('patients.patient_directory') }}" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600">Clear</a>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-slate-500">
+          <tr>
+            <th class="px-5 py-3 text-left font-semibold">Patient ID</th>
+            <th class="px-5 py-3 text-left font-semibold">Name</th>
+            <th class="px-5 py-3 text-left font-semibold">NIC</th>
+            <th class="px-5 py-3 text-left font-semibold">Phone</th>
+            <th class="px-5 py-3 text-left font-semibold">DOB</th>
+            <th class="px-5 py-3 text-left font-semibold">Gender</th>
+            <th class="px-5 py-3 text-left font-semibold">Blood Group</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-200">
+          {% for patient in patients %}
+          <tr>
+            <td class="px-5 py-3 font-medium text-slate-800">
+              <a href="{{ url_for('patient_profile.patient_profile', patient_id=patient.patient_id) }}" class="text-med-700 hover:underline">{{ patient.patient_id }}</a>
+            </td>
+            <td class="px-5 py-3">
+              <a href="{{ url_for('patient_profile.patient_profile', patient_id=patient.patient_id) }}" class="text-slate-800 hover:text-med-700">{{ patient.first_name }} {{ patient.last_name }}</a>
+            </td>
+            <td class="px-5 py-3">{{ patient.nic_number }}</td>
+            <td class="px-5 py-3">{{ patient.phone_number }}</td>
+            <td class="px-5 py-3">{{ patient.date_of_birth }}</td>
+            <td class="px-5 py-3">{{ patient.gender }}</td>
+            <td class="px-5 py-3">{{ patient.blood_group or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="7" class="px-5 py-6 text-center text-slate-500">No patients found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="flex flex-col sm:flex-row sm:items-center sm:justify-between text-sm text-slate-500">
+    <p>Showing {{ patients|length }} of {{ total }} patients.</p>
+    <div class="flex items-center gap-2 mt-3 sm:mt-0">
+      <span>Page {{ page }} of {{ total_pages }}</span>
+      <div class="flex items-center gap-2">
+        {% if page > 1 %}
+        <a href="{{ url_for('patients.patient_directory', search=search, page=page-1) }}" class="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">Previous</a>
+        {% else %}
+        <span class="rounded-lg border border-slate-100 px-3 py-1 text-xs text-slate-400">Previous</span>
+        {% endif %}
+        {% if page < total_pages %}
+        <a href="{{ url_for('patients.patient_directory', search=search, page=page+1) }}" class="rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-600">Next</a>
+        {% else %}
+        <span class="rounded-lg border border-slate-100 px-3 py-1 text-xs text-slate-400">Next</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

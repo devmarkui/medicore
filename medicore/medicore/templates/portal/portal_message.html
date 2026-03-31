@@ -1,0 +1,27 @@
+{% extends 'portal/portal_base.html' %}
+
+{% block title %}MediCore | Message Clinic{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <h2 class="text-lg font-semibold text-slate-900">Message the clinic</h2>
+    <p class="text-sm text-slate-500">Send a secure note to the care team.</p>
+  </section>
+
+  <section class="rounded-2xl bg-white border border-slate-200 p-6">
+    <form method="post" action="{{ url_for('portal.portal_message_submit') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <div>
+        <label class="text-xs font-semibold text-slate-500">Subject</label>
+        <input type="text" name="subject" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-500">Message</label>
+        <textarea name="message" rows="5" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></textarea>
+      </div>
+      <button type="submit" class="inline-flex rounded-lg bg-med-600 px-4 py-2 text-sm font-medium text-white hover:bg-med-700">Send Message</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
