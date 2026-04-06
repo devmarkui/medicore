@@ -36,6 +36,13 @@
           placeholder="07XXXXXXXX"
         />
         <p id="phone-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+
+        <div id="patient-select-wrapper" class="mt-2 hidden">
+          <label for="patient_lookup_select" class="text-xs font-semibold text-slate-600">Select Existing Patient</label>
+          <select id="patient_lookup_select" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            <option value="">Select Existing Patient</option>
+          </select>
+        </div>
       </div>
 
       <div class="grid gap-4 md:grid-cols-2">
@@ -69,11 +76,6 @@
         </div>
       </div>
 
-      <div id="multiple-patient-box" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3">
-        <p class="text-sm font-medium text-amber-800">Multiple patients found with this phone number. Select one:</p>
-        <div id="multiple-patient-list" class="mt-2 space-y-2"></div>
-      </div>
-
       <div class="flex items-center justify-end gap-3 pt-1">
         <button type="button" id="clear-form-btn" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Clear</button>
         <button type="submit" class="rounded-lg bg-med-600 px-5 py-2 text-sm font-medium text-white hover:bg-med-700">Save Patient</button>
@@ -92,8 +94,8 @@
     const nicInput = document.getElementById('nic_number');
     const existingPatientInput = document.getElementById('existing_patient_id');
     const statusBox = document.getElementById('lookup-status');
-    const multipleBox = document.getElementById('multiple-patient-box');
-    const multipleList = document.getElementById('multiple-patient-list');
+  const patientSelectWrapper = document.getElementById('patient-select-wrapper');
+  const patientLookupSelect = document.getElementById('patient_lookup_select');
     const clearBtn = document.getElementById('clear-form-btn');
 
     const phoneError = document.getElementById('phone-error');
@@ -130,14 +132,26 @@
       el.classList.remove('hidden');
     };
 
+    const ensureManualFieldsEditable = () => {
+      [nameInput, ageInput, genderInput, nicInput].forEach((field) => {
+        field.disabled = false;
+        field.readOnly = false;
+        field.classList.remove('pointer-events-none', 'opacity-50', 'bg-slate-100', 'cursor-not-allowed');
+      });
+    };
+
     const clearPatientDataOnly = () => {
       existingPatientInput.value = '';
       nameInput.value = '';
       ageInput.value = '';
       genderInput.value = '';
       nicInput.value = '';
-      multipleBox.classList.add('hidden');
-      multipleList.innerHTML = '';
+    };
+
+    const resetLookupDropdown = () => {
+      patientLookupSelect.innerHTML = '<option value="">Select Existing Patient</option>';
+      patientLookupSelect.value = '';
+      patientSelectWrapper.classList.add('hidden');
     };
 
     const fillPatient = (patient) => {
@@ -148,29 +162,31 @@
       nicInput.value = patient.nic || '';
     };
 
-    const renderMultiple = (patients) => {
-      multipleList.innerHTML = '';
+    const clearSelectedPatientOnly = () => {
+      existingPatientInput.value = '';
+      patientLookupSelect.value = '';
+    };
+
+    const renderLookupDropdown = (patients) => {
+      resetLookupDropdown();
       patients.forEach((patient) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'w-full rounded-lg border border-amber-200 bg-white p-2 text-left text-sm hover:bg-amber-100';
-        button.textContent = `${patient.patient_name || '-'} | NIC: ${patient.nic || '-'} | ${patient.gender || '-'} | Age: ${patient.age ?? '-'} | ID: ${patient.patient_id || '-'}`;
-        button.addEventListener('click', () => {
-          fillPatient(patient);
-          multipleBox.classList.add('hidden');
-          setStatus('Existing patient selected.', 'success');
-        });
-        multipleList.appendChild(button);
+        const option = document.createElement('option');
+        option.value = String(patient.patient_id || '');
+        option.dataset.patient = JSON.stringify(patient);
+        option.textContent = `${patient.patient_name || '-'} - NIC: ${patient.nic || '-'} - ${patient.gender || '-'} - Age ${patient.age ?? '-'} - ${patient.display_patient_id || patient.patient_id || '-'}`;
+        patientLookupSelect.appendChild(option);
       });
-      multipleBox.classList.remove('hidden');
+      patientSelectWrapper.classList.remove('hidden');
     };
 
     const runLookup = async () => {
       const digits = phoneInput.value.replace(/\D/g, '').slice(0, 10);
       phoneInput.value = digits;
       clearFieldErrors();
+      clearPatientDataOnly();
+      resetLookupDropdown();
+      ensureManualFieldsEditable();
       if (digits.length < 3) {
-        clearPatientDataOnly();
         setStatus('Enter at least 3 digits to search.', 'neutral');
         return;
       }
@@ -180,32 +196,69 @@
         const response = await fetch(`{{ url_for('patients.patient_quick_lookup') }}?phone=${encodeURIComponent(digits)}`);
         const payload = await response.json();
 
-        if (payload.status === 'single' && payload.patients.length === 1) {
-          fillPatient(payload.patients[0]);
-          multipleBox.classList.add('hidden');
-          setStatus('Existing patient found.', 'success');
+        const patients = payload.patients || [];
+        if (patients.length === 0) {
+          ensureManualFieldsEditable();
+          setStatus('New patient', 'neutral');
           return;
         }
-        if (payload.status === 'multiple') {
-          clearPatientDataOnly();
-          renderMultiple(payload.patients || []);
-          setStatus('Multiple patients found.', 'warning');
-          return;
+
+        renderLookupDropdown(patients);
+        ensureManualFieldsEditable();
+        if (patients.length === 1) {
+          setStatus('1 patient found. Please confirm selection.', 'warning');
+        } else {
+          setStatus('Multiple patients found. Please select the correct patient.', 'warning');
         }
-        clearPatientDataOnly();
-        setStatus('New patient.', 'neutral');
       } catch (_error) {
-        clearPatientDataOnly();
+        ensureManualFieldsEditable();
         setStatus('Lookup failed. Please continue manual entry.', 'warning');
       }
     };
 
     phoneInput.addEventListener('input', () => {
       phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+      clearPatientDataOnly();
+      resetLookupDropdown();
+      ensureManualFieldsEditable();
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
       debounceTimer = setTimeout(runLookup, 500);
+    });
+
+    patientLookupSelect.addEventListener('change', () => {
+      const selectedOption = patientLookupSelect.options[patientLookupSelect.selectedIndex];
+      if (!selectedOption || !selectedOption.value) {
+        existingPatientInput.value = '';
+        setStatus('Selection cleared. You can enter new patient details.', 'info');
+        return;
+      }
+
+      try {
+        const patient = JSON.parse(selectedOption.dataset.patient || '{}');
+        fillPatient(patient);
+        ensureManualFieldsEditable();
+        setStatus('Existing patient found. Selection confirmed.', 'success');
+      } catch (_error) {
+        clearPatientDataOnly();
+        ensureManualFieldsEditable();
+      }
+    });
+
+    [nameInput, ageInput, genderInput, nicInput].forEach((field) => {
+      field.addEventListener('input', () => {
+        if (existingPatientInput.value) {
+          clearSelectedPatientOnly();
+          setStatus('Manual details changed. This will be saved as a new patient.', 'info');
+        }
+      });
+      field.addEventListener('change', () => {
+        if (existingPatientInput.value) {
+          clearSelectedPatientOnly();
+          setStatus('Manual details changed. This will be saved as a new patient.', 'info');
+        }
+      });
     });
 
     ageInput.addEventListener('input', () => {
@@ -219,6 +272,8 @@
     clearBtn.addEventListener('click', () => {
       form.reset();
       clearPatientDataOnly();
+      resetLookupDropdown();
+  ensureManualFieldsEditable();
       clearFieldErrors();
       setStatus('Enter phone number to start lookup.', 'neutral');
       phoneInput.focus();
@@ -267,6 +322,7 @@
     });
 
     setStatus('Enter phone number to start lookup.', 'neutral');
+    ensureManualFieldsEditable();
     phoneInput.focus();
   })();
 </script>

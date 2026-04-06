@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for, current_app
+from flask import Blueprint, flash, redirect, render_template, request, session, url_for, current_app, jsonify
 
 from medicore.db.connection import get_db_cursor
 from medicore.security.rbac import login_required, role_required
@@ -85,7 +85,7 @@ def _parse_decimal(value: str | None, default: str = "0.00") -> Decimal:
 def _generate_invoice_id(conn, cursor) -> str:
     year_suffix = _now_colombo().strftime("%y")
     prefix = f"INV-{year_suffix}-"
-    cursor.execute("SELECT COUNT(*) AS total FROM invoices WHERE invoice_id LIKE %s", (f"{prefix}%",))
+    cursor.execute("SELECT COUNT(*) AS total FROM invoices WHERE invoice_number LIKE %s", (f"{prefix}%",))
     total = (cursor.fetchone() or {}).get("total", 0)
     sequence = int(total) + 1
     return f"{prefix}{sequence:04d}"
@@ -102,7 +102,9 @@ def _load_patients():
         return cursor.fetchall() or []
 
 
-def _load_invoice(invoice_id: str):
+def _load_invoice(invoice_number_str: str):
+    # Lookup the integer ID first
+    id_query = "SELECT invoice_id FROM invoices WHERE invoice_number = %s"
     invoice_query = """
         SELECT i.*, CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
                p.nic_number, p.phone_number
@@ -124,13 +126,20 @@ def _load_invoice(invoice_id: str):
     """
 
     with get_db_cursor(dictionary=True) as (_conn, cursor):
-        cursor.execute(invoice_query, (invoice_id,))
+        cursor.execute(id_query, (invoice_number_str,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        real_id = row["invoice_id"]
+        
+        cursor.execute(invoice_query, (real_id,))
         invoice = cursor.fetchone()
         if not invoice:
             return None
-        cursor.execute(items_query, (invoice_id,))
+            
+        cursor.execute(items_query, (real_id,))
         items = cursor.fetchall() or []
-        cursor.execute(payments_query, (invoice_id,))
+        cursor.execute(payments_query, (real_id,))
         payments = cursor.fetchall() or []
 
     return invoice, items, payments
@@ -140,48 +149,117 @@ def _load_invoice(invoice_id: str):
 @login_required
 @role_required(ALLOWED_ROLES)
 def billing_dashboard():
-    status_filter = request.args.get("status")
-    search_term = (request.args.get("search") or "").strip()
-
-    query = """
-        SELECT i.invoice_id, i.patient_id, i.subtotal, i.tax_amount, i.discount_amount,
-               i.total_amount, i.status, i.created_at,
-               CONCAT(p.first_name, ' ', p.last_name) AS patient_name
-        FROM invoices i
-        INNER JOIN patients p ON p.patient_id = i.patient_id
-        WHERE 1=1
-    """
-    params = []
-    if status_filter:
-        query += " AND i.status = %s"
-        params.append(status_filter)
-    if search_term:
-        query += " AND (i.invoice_id LIKE %s OR p.first_name LIKE %s OR p.last_name LIKE %s)"
-        like_term = f"%{search_term}%"
-        params.extend([like_term, like_term, like_term])
-
-    query += " ORDER BY i.created_at DESC LIMIT 200"
-
-    with get_db_cursor(dictionary=True) as (_conn, cursor):
-        cursor.execute(query, tuple(params))
-        invoices = cursor.fetchall() or []
-
-    for invoice in invoices:
-        invoice["total_display"] = _format_lkr(invoice["total_amount"])
-
+    # This now serves as the Billing Workstation entry point
     return render_template(
-        "billing/billing_dashboard.html",
-        title="Billing",
+        "billing/billing_workstation.html",
+        title="Billing Workstation",
         active_page="billing",
         current_user={
             "username": session.get("username", "User"),
             "role": session.get("role", ""),
         },
-        invoices=invoices,
-        status_filter=status_filter or "",
-        search_term=search_term,
         csrf_token=generate_csrf_token(),
     )
+
+
+@billing_bp.get("/api/pending")
+@login_required
+@role_required(ALLOWED_ROLES)
+def billing_api_pending():
+    query = """
+        SELECT i.invoice_id, i.invoice_number, i.patient_id, i.total_amount, i.status, i.created_at,
+               CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+               p.phone_number, a.token_number, d.doctor_name
+        FROM invoices i
+        INNER JOIN patients p ON p.patient_id = i.patient_id
+        LEFT JOIN appointments a ON a.appointment_id = i.appointment_id
+        LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
+        WHERE i.status IN ('Pending', 'Partial')
+        ORDER BY i.created_at DESC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query)
+        rows = cursor.fetchall() or []
+    
+    return jsonify({"ok": True, "bills": rows})
+
+
+@billing_bp.get("/api/invoice/<invoice_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def billing_api_invoice(invoice_id: str):
+    data = _load_invoice(invoice_id)
+    if not data:
+        return jsonify({"ok": False, "message": "Invoice not found"}), 404
+        
+    invoice, items, payments = data
+    total_paid = sum((p["amount_paid"] for p in payments), Decimal("0.00"))
+    
+    # Add doctor info if available via appointment
+    if invoice.get("appointment_id"):
+        with get_db_cursor(dictionary=True) as (_conn, cursor):
+            cursor.execute(
+                """
+                SELECT a.token_number, a.appointment_date, d.doctor_name
+                FROM appointments a
+                LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
+                WHERE a.appointment_id = %s
+                """,
+                (invoice["appointment_id"],)
+            )
+            appt = cursor.fetchone()
+            if appt:
+                invoice.update(appt)
+
+    return jsonify({
+        "ok": True,
+        "invoice": invoice,
+        "items": items,
+        "payments": payments,
+        "total_paid": str(total_paid),
+        "balance": str(invoice["total_amount"] - total_paid)
+    })
+
+
+@billing_bp.post("/api/pay/<invoice_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def billing_api_pay(invoice_id: str):
+    payload = request.get_json(silent=True) or {}
+    amount_paid = _parse_decimal(str(payload.get("amount", 0)))
+    payment_method = payload.get("method", "Cash")
+    
+    if amount_paid <= 0:
+        return jsonify({"ok": False, "message": "Amount must be > 0"}), 400
+
+    insert_payment = """
+        INSERT INTO payments (invoice_id, amount_paid, payment_method, payment_date)
+        VALUES (%s, %s, %s, NOW())
+    """
+    
+    # Lookup bigint ID for internal payment linking
+    with get_db_cursor(dictionary=True) as (conn, cursor):
+        cursor.execute("SELECT invoice_id FROM invoices WHERE invoice_number = %s", (invoice_id,))
+        row = cursor.fetchone()
+        if not row:
+            return jsonify({"ok": False, "message": "Invoice not found"}), 404
+        real_id = row["invoice_id"]
+
+        cursor.execute(insert_payment, (real_id, amount_paid, payment_method))
+        
+        # Recalculate status
+        cursor.execute("SELECT total_amount FROM invoices WHERE invoice_id = %s", (real_id,))
+        inv = cursor.fetchone()
+        cursor.execute("SELECT SUM(amount_paid) AS total_paid FROM payments WHERE invoice_id = %s", (real_id,))
+        paid = cursor.fetchone()
+        
+        total = Decimal(str(inv["total_amount"]))
+        total_paid = Decimal(str(paid["total_paid"] or 0))
+        
+        new_status = "Paid" if total_paid >= total else "Partial"
+        cursor.execute("UPDATE invoices SET status = %s WHERE invoice_id = %s", (new_status, real_id))
+
+    return jsonify({"ok": True, "status": new_status})
 
 
 @billing_bp.get("/create/<patient_id>")
@@ -261,7 +339,7 @@ def billing_create_submit():
 
     invoice_insert = """
         INSERT INTO invoices (
-            invoice_id, patient_id, appointment_id, subtotal, tax_amount,
+            invoice_number, patient_id, appointment_id, subtotal, tax_amount,
             discount_amount, total_amount, status, created_at, created_by
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, 'Pending', NOW(), %s)
     """
@@ -271,12 +349,11 @@ def billing_create_submit():
     """
 
     with get_db_cursor(dictionary=True) as (conn, cursor):
-        conn.start_transaction()
-        invoice_id = _generate_invoice_id(conn, cursor)
+        invoice_code = _generate_invoice_id(conn, cursor)
         cursor.execute(
             invoice_insert,
             (
-                invoice_id,
+                invoice_code,
                 patient_id,
                 appointment_id,
                 subtotal,
@@ -286,11 +363,12 @@ def billing_create_submit():
                 session.get("user_id"),
             ),
         )
+        real_invoice_id = cursor.lastrowid
         for description, quantity, unit_price, line_total in line_items:
-            cursor.execute(item_insert, (invoice_id, description, quantity, unit_price, line_total))
+            cursor.execute(item_insert, (real_invoice_id, description, quantity, unit_price, line_total))
 
-    flash(f"Invoice {invoice_id} created successfully.", "success")
-    return redirect(url_for("billing.invoice_view", invoice_id=invoice_id))
+    flash(f"Invoice {invoice_code} created successfully.", "success")
+    return redirect(url_for("billing.invoice_view", invoice_id=invoice_code))
 
 
 @billing_bp.get("/invoice/<invoice_id>")
@@ -362,7 +440,6 @@ def invoice_pay(invoice_id: str):
     """
 
     with get_db_cursor(dictionary=True) as (conn, cursor):
-        conn.start_transaction()
         cursor.execute(insert_payment, (invoice_id, amount_paid, payment_method, transaction_reference))
         cursor.execute(total_query, (invoice_id, invoice_id))
         totals = cursor.fetchone()

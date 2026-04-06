@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import re
+import secrets
+
 from flask import Blueprint, flash, redirect, render_template, request, session, url_for
 
 from medicore.db.connection import get_db_cursor
+from medicore.security.passwords import hash_password
 from medicore.security.audit import log_audit_action
 from medicore.security.rbac import login_required, role_required
 from medicore.security.web import generate_csrf_token, validate_csrf_token
@@ -57,6 +61,49 @@ def _load_tax_rules() -> list[dict]:
         SELECT tax_id, tax_name, percentage, is_active
         FROM tax_rules
         ORDER BY tax_name ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query)
+        return cursor.fetchall() or []
+
+
+def _normalize_name(value: str) -> str:
+    return " ".join((value or "").strip().split())
+
+
+def _split_name(full_name: str) -> tuple[str, str]:
+    parts = _normalize_name(full_name).split(" ")
+    if len(parts) == 1:
+        return parts[0], parts[0]
+    return parts[0], " ".join(parts[1:])
+
+
+def _sanitize_code(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]", "", (value or "").strip()).upper()
+
+
+def _parse_fee(value: str) -> float:
+    try:
+        parsed = float((value or "0").strip())
+        return max(0.0, parsed)
+    except Exception:
+        return 0.0
+
+
+def _load_doctors_for_settings() -> list[dict]:
+    query = """
+        SELECT d.doctor_id,
+               d.doctor_name,
+               d.doctor_code,
+               d.specialization,
+               d.doctor_fee,
+               d.hospital_fee,
+               d.is_active,
+               u.username,
+               u.email
+        FROM doctors d
+        LEFT JOIN users u ON u.user_id = d.doctor_id
+        ORDER BY d.doctor_name ASC
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(query)
@@ -221,6 +268,169 @@ def add_department():
     return redirect(url_for("settings.tax_departments_dashboard"))
 
 
+@settings_bp.get("/doctors")
+@login_required
+@role_required(ALLOWED_ROLES)
+def doctor_management_dashboard():
+    return render_template(
+        "settings/doctor_management.html",
+        title="Doctor Management",
+        active_page="settings",
+        current_user={
+            "username": session.get("username", "User"),
+            "role": session.get("role", ""),
+        },
+        doctors=_load_doctors_for_settings(),
+        csrf_token=generate_csrf_token(),
+    )
+
+
+@settings_bp.post("/doctors/add")
+@login_required
+@role_required(ALLOWED_ROLES)
+def add_doctor():
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.doctor_management_dashboard"))
+
+    doctor_name = _normalize_name(request.form.get("doctor_name") or "")
+    doctor_code = _sanitize_code(request.form.get("doctor_code") or "")
+    specialization = _normalize_name(request.form.get("specialization") or "")
+    doctor_fee = _parse_fee(request.form.get("doctor_fee") or "0")
+    hospital_fee = _parse_fee(request.form.get("hospital_fee") or "0")
+
+    if not doctor_name or len(doctor_name) < 2:
+        flash("Doctor name is required.", "error")
+        return redirect(url_for("settings.doctor_management_dashboard"))
+    if not doctor_code:
+        flash("Doctor code is required.", "error")
+        return redirect(url_for("settings.doctor_management_dashboard"))
+
+    first_name, last_name = _split_name(doctor_name)
+    username = f"dr_{doctor_code.lower()}"
+    email = f"{username}@medicore.local"
+    password_seed = secrets.token_urlsafe(16)
+    password_hash = hash_password(password_seed)
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute("SELECT 1 FROM doctors WHERE doctor_code = %s LIMIT 1", (doctor_code,))
+        if cursor.fetchone():
+            flash("Doctor code already exists.", "error")
+            return redirect(url_for("settings.doctor_management_dashboard"))
+
+        cursor.execute("SELECT id FROM roles WHERE role_name = 'Doctor' LIMIT 1")
+        role_row = cursor.fetchone() or {}
+        role_id = role_row.get("id")
+
+        cursor.execute(
+            """
+            INSERT INTO users (
+                email, password_hash, first_name, last_name, username,
+                role, role_id, status, is_active, full_name
+            ) VALUES (%s, %s, %s, %s, %s, 'Doctor', %s, 'Active', 1, %s)
+            """,
+            (email, password_hash, first_name, last_name, username, role_id, doctor_name),
+        )
+        doctor_user_id = int(cursor.lastrowid)
+
+        cursor.execute(
+            """
+            INSERT INTO doctors (
+                doctor_id, doctor_name, doctor_code, specialization,
+                doctor_fee, hospital_fee, is_active
+            ) VALUES (%s, %s, %s, %s, %s, %s, 1)
+            """,
+            (
+                doctor_user_id,
+                doctor_name,
+                doctor_code,
+                specialization or None,
+                doctor_fee,
+                hospital_fee,
+            ),
+        )
+
+    flash("Doctor added successfully.", "success")
+    return redirect(url_for("settings.doctor_management_dashboard"))
+
+
+@settings_bp.post("/doctors/edit/<int:doctor_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def edit_doctor(doctor_id: int):
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.doctor_management_dashboard"))
+
+    doctor_name = _normalize_name(request.form.get("doctor_name") or "")
+    specialization = _normalize_name(request.form.get("specialization") or "")
+    doctor_fee = _parse_fee(request.form.get("doctor_fee") or "0")
+    hospital_fee = _parse_fee(request.form.get("hospital_fee") or "0")
+
+    if not doctor_name or len(doctor_name) < 2:
+        flash("Doctor name is required.", "error")
+        return redirect(url_for("settings.doctor_management_dashboard"))
+
+    first_name, last_name = _split_name(doctor_name)
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(
+            """
+            UPDATE doctors
+            SET doctor_name = %s,
+                specialization = %s,
+                doctor_fee = %s,
+                hospital_fee = %s,
+                updated_at = NOW()
+            WHERE doctor_id = %s
+            """,
+            (doctor_name, specialization or None, doctor_fee, hospital_fee, doctor_id),
+        )
+        cursor.execute(
+            """
+            UPDATE users
+            SET first_name = %s,
+                last_name = %s,
+                full_name = %s
+            WHERE user_id = %s
+            """,
+            (first_name, last_name, doctor_name, doctor_id),
+        )
+
+    flash("Doctor updated.", "success")
+    return redirect(url_for("settings.doctor_management_dashboard"))
+
+
+@settings_bp.post("/doctors/toggle/<int:doctor_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def toggle_doctor(doctor_id: int):
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.doctor_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute("SELECT is_active FROM doctors WHERE doctor_id = %s LIMIT 1", (doctor_id,))
+        row = cursor.fetchone()
+        if not row:
+            flash("Doctor not found.", "error")
+            return redirect(url_for("settings.doctor_management_dashboard"))
+
+        next_active = 0 if int(row.get("is_active", 0)) == 1 else 1
+        next_status = "Active" if next_active == 1 else "Inactive"
+
+        cursor.execute(
+            "UPDATE doctors SET is_active = %s, updated_at = NOW() WHERE doctor_id = %s",
+            (next_active, doctor_id),
+        )
+        cursor.execute(
+            "UPDATE users SET is_active = %s, status = %s WHERE user_id = %s",
+            (next_active, next_status, doctor_id),
+        )
+
+    flash("Doctor status updated.", "success")
+    return redirect(url_for("settings.doctor_management_dashboard"))
+
+
 @settings_bp.post("/departments/toggle/<int:department_id>")
 @login_required
 @role_required(SUPERADMIN_ONLY)
@@ -284,3 +494,288 @@ def toggle_tax_rule(tax_id: int):
 
     flash("Tax rule status updated.", "success")
     return redirect(url_for("settings.tax_departments_dashboard"))
+
+
+# ======================== SERVICE MANAGEMENT ========================
+
+
+def _load_service_categories() -> list[dict]:
+    """Load all active service categories ordered by display_order."""
+    query = """
+        SELECT category_id, category_name, icon_class, display_order, is_active, description
+        FROM service_categories
+        WHERE is_active = TRUE
+        ORDER BY display_order ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query)
+        return cursor.fetchall() or []
+
+
+def _load_all_service_categories() -> list[dict]:
+    """Load all service categories (active and inactive) for management."""
+    query = """
+        SELECT category_id, category_name, icon_class, display_order, is_active, description
+        FROM service_categories
+        ORDER BY display_order ASC, category_name ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query)
+        return cursor.fetchall() or []
+
+
+def _load_service_items_for_category(category_id: int) -> list[dict]:
+    """Load all service items for a given category."""
+    query = """
+        SELECT item_id, item_code, item_name, category_id, price, description, is_active, display_order
+        FROM service_items
+        WHERE category_id = %s
+        ORDER BY display_order ASC, item_name ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query, (category_id,))
+        return cursor.fetchall() or []
+
+
+@settings_bp.get("/services")
+@login_required
+@role_required(ALLOWED_ROLES)
+def services_management_dashboard():
+    """Main services management dashboard."""
+    categories = _load_all_service_categories()
+    return render_template(
+        "settings/services_management.html",
+        title="Services Management",
+        active_page="settings",
+        current_user={
+            "username": session.get("username", "User"),
+            "role": session.get("role", ""),
+        },
+        categories=categories,
+        csrf_token=generate_csrf_token(),
+    )
+
+
+@settings_bp.post("/services/category/add")
+@login_required
+@role_required(ALLOWED_ROLES)
+def add_service_category():
+    """Add a new service category."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    category_name = _normalize_name(request.form.get("category_name") or "")
+    icon_class = (request.form.get("icon_class") or "").strip()
+    description = (request.form.get("description") or "").strip()
+
+    if not category_name or len(category_name) < 2:
+        flash("Category name is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute("SELECT 1 FROM service_categories WHERE category_name = %s LIMIT 1", (category_name,))
+        if cursor.fetchone():
+            flash("Category name already exists.", "error")
+            return redirect(url_for("settings.services_management_dashboard"))
+
+        cursor.execute(
+            "SELECT MAX(display_order) as max_order FROM service_categories"
+        )
+        result = cursor.fetchone() or {}
+        next_order = (result.get("max_order") or 0) + 1
+
+        cursor.execute(
+            """
+            INSERT INTO service_categories (category_name, icon_class, display_order, is_active, description)
+            VALUES (%s, %s, %s, TRUE, %s)
+            """,
+            (category_name, icon_class or None, next_order, description or None),
+        )
+
+    flash("Service category added successfully.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))
+
+
+@settings_bp.post("/services/category/edit/<int:category_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def edit_service_category(category_id: int):
+    """Edit a service category."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    category_name = _normalize_name(request.form.get("category_name") or "")
+    icon_class = (request.form.get("icon_class") or "").strip()
+    description = (request.form.get("description") or "").strip()
+
+    if not category_name or len(category_name) < 2:
+        flash("Category name is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(
+            """
+            UPDATE service_categories
+            SET category_name = %s, icon_class = %s, description = %s, updated_at = NOW()
+            WHERE category_id = %s
+            """,
+            (category_name, icon_class or None, description or None, category_id),
+        )
+
+    flash("Service category updated.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))
+
+
+@settings_bp.post("/services/category/toggle/<int:category_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def toggle_service_category(category_id: int):
+    """Toggle category active/inactive status."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(
+            """
+            UPDATE service_categories
+            SET is_active = NOT is_active, updated_at = NOW()
+            WHERE category_id = %s
+            """,
+            (category_id,),
+        )
+
+    flash("Category status updated.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))
+
+
+@settings_bp.post("/services/item/add")
+@login_required
+@role_required(ALLOWED_ROLES)
+def add_service_item():
+    """Add a new service item."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    item_code = _sanitize_code(request.form.get("item_code") or "")
+    item_name = _normalize_name(request.form.get("item_name") or "")
+    category_id = request.form.get("category_id") or ""
+    price = _parse_fee(request.form.get("price") or "0")
+    description = (request.form.get("description") or "").strip()
+
+    if not item_code:
+        flash("Item code is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+    if not item_name or len(item_name) < 2:
+        flash("Item name is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+    if not category_id:
+        flash("Category is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    try:
+        category_id = int(category_id)
+    except ValueError:
+        flash("Invalid category selected.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute("SELECT 1 FROM service_items WHERE item_code = %s LIMIT 1", (item_code,))
+        if cursor.fetchone():
+            flash("Item code already exists.", "error")
+            return redirect(url_for("settings.services_management_dashboard"))
+
+        cursor.execute("SELECT 1 FROM service_categories WHERE category_id = %s LIMIT 1", (category_id,))
+        if not cursor.fetchone():
+            flash("Invalid category selected.", "error")
+            return redirect(url_for("settings.services_management_dashboard"))
+
+        cursor.execute(
+            "SELECT MAX(display_order) as max_order FROM service_items WHERE category_id = %s",
+            (category_id,),
+        )
+        result = cursor.fetchone() or {}
+        next_order = (result.get("max_order") or 0) + 1
+
+        cursor.execute(
+            """
+            INSERT INTO service_items (item_code, item_name, category_id, price, description, is_active, display_order)
+            VALUES (%s, %s, %s, %s, %s, TRUE, %s)
+            """,
+            (item_code, item_name, category_id, price, description or None, next_order),
+        )
+
+    flash("Service item added successfully.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))
+
+
+@settings_bp.post("/services/item/edit/<int:item_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def edit_service_item(item_id: int):
+    """Edit a service item."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    item_name = _normalize_name(request.form.get("item_name") or "")
+    category_id = request.form.get("category_id") or ""
+    price = _parse_fee(request.form.get("price") or "0")
+    description = (request.form.get("description") or "").strip()
+
+    if not item_name or len(item_name) < 2:
+        flash("Item name is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+    if not category_id:
+        flash("Category is required.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    try:
+        category_id = int(category_id)
+    except ValueError:
+        flash("Invalid category selected.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute("SELECT 1 FROM service_categories WHERE category_id = %s LIMIT 1", (category_id,))
+        if not cursor.fetchone():
+            flash("Invalid category selected.", "error")
+            return redirect(url_for("settings.services_management_dashboard"))
+
+        cursor.execute(
+            """
+            UPDATE service_items
+            SET item_name = %s, category_id = %s, price = %s, description = %s, updated_at = NOW()
+            WHERE item_id = %s
+            """,
+            (item_name, category_id, price, description or None, item_id),
+        )
+
+    flash("Service item updated.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))
+
+
+@settings_bp.post("/services/item/toggle/<int:item_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def toggle_service_item(item_id: int):
+    """Toggle item active/inactive status."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.services_management_dashboard"))
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(
+            """
+            UPDATE service_items
+            SET is_active = NOT is_active, updated_at = NOW()
+            WHERE item_id = %s
+            """,
+            (item_id,),
+        )
+
+    flash("Item status updated.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))

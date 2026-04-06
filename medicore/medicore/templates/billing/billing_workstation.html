@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* ── Override padding ── */
+  main.flex-1 { padding: 0 !important; max-width: 100%; overflow: hidden; }
+
+  /* ── MediCore Theme ── */
+  :root {
+    --mc-50:  #f0fdfa; --mc-100: #ccfbf1; --mc-200: #99f6e4;
+    --mc-500: #14b8a6; --mc-600: #0d9488; --mc-700: #0f766e;
+    --mc-800: #115e59; --mc-900: #134e4a;
+  }
+
+  /* ── Custom Scrollbars ── */
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+
+  /* ── Queue Cards ── */
+  .queue-card {
+    background: #fff; padding: 12px; border-radius: 12px; border: 1px solid #f1f5f9;
+    cursor: pointer; transition: all .2s; position: relative;
+    box-shadow: 0 1px 3px rgba(0,0,0,.02);
+  }
+  .queue-card:hover { border-color: var(--mc-500); transform: translateY(-2px); box-shadow: 0 8px 16px -4px rgba(13,148,136,.1); }
+  .queue-card.active { border-color: var(--mc-600); background: var(--mc-50); box-shadow: 0 0 0 2px var(--mc-200); }
+
+  /* ── Receipt Preview ── */
+  .receipt-mockup {
+    background: white; width: 100%; max-width: 300px; margin: 0 auto;
+    padding: 24px; box-shadow: 0 10px 40px -10px rgba(0,0,0,0.1);
+    border-radius: 4px; font-family: 'Inter', monospace;
+    font-size: 10px; line-height: 1.4; color: #333;
+  }
+  .receipt-header { text-align: center; border-bottom: 1px dashed #e2e8f0; padding-bottom: 15px; margin-bottom: 15px; }
+
+  /* ── Status Badges ── */
+  .badge-pending { background: #fff7ed; color: #9a3412; border: 1px solid #ffedd5; }
+  .badge-partial { background: #f0fdfa; color: #0f766e; border: 1px solid #ccfbf1; }
+
+  /* ── Quick Pay Buttons ── */
+  .pay-btn {
+    transition: all .2s; border: 1px solid #e2e8f0;
+  }
+  .pay-btn:hover { background: var(--mc-600); color: white; border-color: var(--mc-600); }
+
+</style>
+
+<div class="flex flex-col bg-slate-50 overflow-hidden" style="height: calc(100vh - 73px);">
+  
+  <!-- ╔══ TOP STATS BAR ══════════════════════════════╗ -->
+  <div class="bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-6">
+    <div class="flex gap-10">
+      <div>
+        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Collection</p>
+        <p class="text-lg font-black text-slate-800">LKR 142,500.00</p>
+      </div>
+      <div>
+        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pending Bills</p>
+        <p id="pendingCount" class="text-lg font-black text-rose-500">0</p>
+      </div>
+      <div>
+        <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cash In Hand</p>
+        <p class="text-lg font-black text-emerald-600">LKR 84,200.00</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 tracking-widest uppercase">Register: OPEN</span>
+      <button class="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-[10px] font-bold uppercase transition">Close Session</button>
+    </div>
+  </div>
+
+  <!-- ╔══ MAIN WORKSPACE ═════════════════════════════╗ -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- ┌── COLUMN 1: Pending Queue (20%) ──┐ -->
+    <div class="w-[300px] shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-100">
+        <label class="block text-[9px] font-bold text-slate-400 uppercase mb-2">Queue Search</label>
+        <div class="relative">
+          <input type="text" id="queueSearch" placeholder="Search Patient / Bill..." 
+            class="w-full h-9 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs" />
+          <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+      <div id="pendingQueue" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+        <!-- Billing cards injected here -->
+        <div class="flex flex-col items-center justify-center h-full opacity-20">
+          <svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <p class="text-xs font-bold uppercase">No pending bills</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ┌── COLUMN 2: Bill Content (60%) ──┐ -->
+    <div class="flex-1 overflow-y-auto bg-slate-50 custom-scrollbar relative">
+      <div id="billWorkingArea" class="hidden p-8 max-w-4xl mx-auto space-y-6">
+        
+        <!-- Header Info -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div class="flex justify-between items-start mb-6">
+            <div>
+              <span id="billStatusBadge" class="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest mb-2 inline-block">PENDING PAYMENT</span>
+              <h1 id="viewPatientName" class="text-2xl font-black text-slate-900 leading-none mb-1">---</h1>
+              <p class="text-xs text-slate-400 font-medium"><span id="viewPatientPhone">---</span> • <span id="viewInvoiceId">INV-00-0000</span></p>
+            </div>
+            <div class="text-right">
+              <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Appointment Details</p>
+              <p id="viewDoctorName" class="text-xs font-bold text-slate-700">---</p>
+              <div class="flex items-center justify-end gap-2 mt-1">
+                <span class="text-[10px] font-black text-white px-2 py-0.5 rounded bg-slate-800" id="viewTokenNo">T-00</span>
+                <span class="text-[10px] font-bold text-slate-500" id="viewDate">0000-00-00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Items Table -->
+          <div class="overflow-hidden border border-slate-100 rounded-xl">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider">
+                <tr>
+                  <th class="px-4 py-3">Description</th>
+                  <th class="px-4 py-3 text-center w-20">Qty</th>
+                  <th class="px-4 py-3 text-right w-32">Price</th>
+                  <th class="px-4 py-3 text-right w-32">Total</th>
+                </tr>
+              </thead>
+              <tbody id="viewLineItems" class="divide-y divide-slate-50">
+                <!-- Items injected here -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Totals Footer -->
+          <div class="grid grid-cols-2 gap-10 mt-6 pt-6 border-t border-slate-100">
+            <div class="space-y-4">
+              <label class="block text-[10px] font-bold text-slate-400 uppercase">Payment Collection</label>
+              <div class="flex items-center gap-3">
+                <div class="flex-1">
+                  <p class="text-[9px] font-bold text-slate-500 uppercase mb-1">Method</p>
+                  <select id="collectMethod" class="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg font-bold text-xs">
+                    <option value="Cash">CASH</option>
+                    <option value="Card">CARD</option>
+                    <option value="Transfer">BANK TRANSFER</option>
+                  </select>
+                </div>
+                <div class="flex-1">
+                  <p class="text-[9px] font-bold text-slate-500 uppercase mb-1">Amount Received</p>
+                  <input type="number" id="collectAmount" class="w-full h-10 px-3 bg-emerald-50 border border-emerald-200 rounded-lg font-black text-emerald-700 text-sm" placeholder="0.00" />
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button onclick="quickPay('exact')" class="flex-1 h-8 text-[9px] font-bold uppercase bg-slate-100 rounded hover:bg-slate-200 transition">Exact Amount</button>
+                <button onclick="quickPay('5000')" class="flex-1 h-8 text-[9px] font-bold uppercase bg-slate-100 rounded hover:bg-slate-200 transition">LKR 5000</button>
+              </div>
+            </div>
+            <div class="flex flex-col justify-end space-y-1 text-right">
+              <div class="flex justify-between items-center text-xs text-slate-400 font-bold uppercase">
+                <span>Subtotal</span>
+                <span id="viewSubtotal">LKR 0.00</span>
+              </div>
+              <div class="flex justify-between items-center text-xs text-slate-400 font-bold uppercase">
+                <span>Discount</span>
+                <span id="viewDiscount">- LKR 0.00</span>
+              </div>
+              <div class="flex justify-between items-center py-2">
+                <span class="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Grand Total</span>
+                <span id="viewGrandTotal" class="text-3xl font-black text-slate-900">LKR 0.00</span>
+              </div>
+              <div class="flex justify-between items-center text-rose-500 font-bold italic border-t border-slate-100 pt-2">
+                <span class="text-[10px] uppercase">Balance Due</span>
+                <span id="viewBalance" class="text-lg">LKR 0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Working Area Actions -->
+        <div class="flex gap-4">
+          <button id="postPaymentBtn" class="flex-1 h-14 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition shadow-lg shadow-emerald-200 flex items-center justify-center gap-3">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Post Payment & Finalize
+          </button>
+          <button id="printBillBtn" class="w-14 h-14 bg-white border border-slate-200 text-slate-400 hover:text-slate-600 rounded-2xl flex items-center justify-center transition">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2m8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+
+      </div>
+
+      <div id="emptyBillState" class="flex flex-col items-center justify-center h-full opacity-30">
+        <div class="bg-slate-100 p-8 rounded-full mb-4">
+          <svg class="w-16 h-16 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" stroke-width="1.5"/></svg>
+        </div>
+        <p class="text-sm font-black text-slate-800 uppercase tracking-widest">Select a bill from the queue</p>
+        <p class="text-xs text-slate-400 font-medium">System is ready for payment collection</p>
+      </div>
+    </div>
+
+    <!-- ┌── COLUMN 3: Receipt Preview (20%) ──┐ -->
+    <div class="w-[340px] shrink-0 bg-white border-l border-slate-200 flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+        <h3 class="text-[10px] font-bold text-slate-800 uppercase tracking-widest">Receipt Preview</h3>
+        <button id="refreshPreviewBtn" class="p-1 hover:bg-slate-50 text-slate-400 rounded transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+      <div class="flex-1 overflow-y-auto bg-slate-100/50 p-6 custom-scrollbar">
+        <!-- Mock Receipt -->
+        <div id="receiptPreview" class="receipt-mockup">
+          <div class="receipt-header">
+            <h2 class="text-base font-black uppercase mb-1">MediCore</h2>
+            <p class="font-bold">Medical Center</p>
+            <p>123 Clinic Road, Colombo 03</p>
+            <p>Tel: +94 11 123 4567</p>
+          </div>
+          <div class="mb-4">
+            <div class="flex justify-between"><span>No</span><span class="font-bold" id="rcptInvId">---</span></div>
+            <div class="flex justify-between"><span>Date</span><span id="rcptDate">---</span></div>
+            <div class="flex justify-between"><span>Patient</span><span class="font-bold" id="rcptName">---</span></div>
+            <div class="flex justify-between"><span>Doctor</span><span id="rcptDoctor">---</span></div>
+            <div class="flex justify-between"><span>Token</span><span class="font-bold underline" id="rcptToken">---</span></div>
+          </div>
+          <div id="rcptItems" class="space-y-1 border-t border-b border-dashed border-slate-300 py-3 mb-3">
+            <!-- Items injected -->
+          </div>
+          <div class="space-y-1">
+            <div class="flex justify-between font-black text-sm pt-2">
+              <span>NET TOTAL</span>
+              <span id="rcptTotal">LKR 0.00</span>
+            </div>
+          </div>
+          <div class="mt-6 text-center text-[8px] uppercase font-bold text-slate-400">
+            <p>Thank you for choosing MediCore</p>
+            <p>Wishing you a speedy recovery</p>
+          </div>
+        </div>
+      </div>
+      <div class="p-4 border-t border-slate-100 space-y-2">
+        <button onclick="window.print()" class="w-full h-10 bg-slate-800 text-white text-[10px] font-bold uppercase rounded-lg hover:bg-slate-700 transition">Print Receipt (A5/Pos)</button>
+        <button class="w-full h-10 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold uppercase rounded-lg hover:bg-slate-50 transition">Email Patient Copy</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const state = {
+    pendingBills: [],
+    selectedBill: null,
+    currentInvoiceId: new URLSearchParams(window.location.search).get('invoice_id')
+  };
+
+  const $ = id => document.getElementById(id);
+
+  // ── INIT ──
+  async function init() {
+    await fetchPendingQueue();
+    if (state.currentInvoiceId) {
+      selectBill(state.currentInvoiceId);
+    }
+  }
+
+  // ── FETCH QUEUE ──
+  async function fetchPendingQueue() {
+    try {
+      const res = await fetch('/billing/api/pending');
+      const data = await res.json();
+      if (data.ok) {
+        state.pendingBills = data.bills;
+        renderQueue();
+        $('pendingCount').textContent = data.bills.length;
+      }
+    } catch (e) { console.error('Queue error:', e); }
+  }
+
+  function renderQueue() {
+    const q = $('queueSearch').value.toLowerCase();
+    const container = $('pendingQueue');
+    container.innerHTML = '';
+    
+    const filtered = state.pendingBills.filter(b => 
+      b.patient_name.toLowerCase().includes(q) || 
+      b.invoice_number.toLowerCase().includes(q) || 
+      (b.phone_number || '').includes(q)
+    );
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<p class="text-xs text-center text-slate-400 py-10 font-bold uppercase">No bills found</p>';
+      return;
+    }
+
+    filtered.forEach(b => {
+      const card = document.createElement('div');
+      card.className = `queue-card ${state.currentInvoiceId === b.invoice_number ? 'active' : ''}`;
+      card.innerHTML = `
+        <div class="flex justify-between items-start mb-1">
+          <span class="text-[10px] font-bold text-slate-400">${b.invoice_number}</span>
+          <span class="text-[8px] font-black px-1.5 py-0.5 rounded ${b.status === 'Partial' ? 'badge-partial' : 'badge-pending'} uppercase">${b.status}</span>
+        </div>
+        <h4 class="text-xs font-black text-slate-800">${b.patient_name}</h4>
+        <div class="flex justify-between items-end mt-2">
+          <div class="text-[9px] text-slate-400 font-bold">
+            ${b.doctor_name || 'Clinic Service'}
+            <p class="font-mono text-slate-300 mt-0.5">${new Date(b.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</p>
+          </div>
+          <div class="text-right">
+            <span class="block text-[8px] font-bold text-slate-400 uppercase">Balance</span>
+            <span class="text-xs font-black text-rose-500">LKR ${parseFloat(b.total_amount).toFixed(2)}</span>
+          </div>
+        </div>
+        ${b.token_number ? `<div class="absolute -right-1 -top-1 w-6 h-6 bg-slate-800 text-white flex items-center justify-center text-[9px] font-black rounded-lg shadow-lg">${b.token_number}</div>` : ''}
+      `;
+      card.addEventListener('click', () => selectBill(b.invoice_number));
+      container.appendChild(card);
+    });
+  }
+
+  // ── SELECT BILL ──
+  async function selectBill(id) {
+    state.currentInvoiceId = id;
+    renderQueue();
+    $('emptyBillState').classList.add('hidden');
+    const workingArea = $('billWorkingArea');
+    workingArea.classList.remove('hidden');
+    workingArea.classList.add('opacity-50');
+
+    try {
+      const res = await fetch(`/billing/api/invoice/${id}`);
+      const data = await res.json();
+      if (data.ok) {
+        state.selectedBill = data;
+        updateUI();
+      }
+    } catch (e) { console.error('Select error:', e); }
+    finally { workingArea.classList.remove('opacity-50'); }
+  }
+
+  function updateUI() {
+    const { invoice, items, total_paid, balance } = state.selectedBill;
+    
+    // Center Panel
+    $('viewPatientName').textContent = invoice.patient_name;
+    $('viewInvoiceId').textContent = invoice.invoice_id;
+    $('viewPatientPhone').textContent = invoice.phone_number || 'No phone';
+    $('viewDoctorName').textContent = invoice.doctor_name || 'Hospital Service';
+    $('viewTokenNo').textContent = invoice.token_number ? `T-${invoice.token_number}` : 'NO TOKEN';
+    $('viewDate').textContent = new Date(invoice.created_at).toLocaleDateString();
+    
+    const badge = $('billStatusBadge');
+    badge.textContent = invoice.status === 'Partial' ? 'PARTIAL PAYMENT' : 'PENDING PAYMENT';
+    badge.className = `px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest mb-2 inline-block ${invoice.status === 'Partial' ? 'bg-orange-100 text-orange-700' : 'bg-rose-100 text-rose-700'}`;
+
+    // Line items
+    const list = $('viewLineItems');
+    list.innerHTML = '';
+    items.forEach(item => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="px-4 py-3 font-bold text-slate-700">${item.description}</td>
+        <td class="px-4 py-3 text-center text-slate-500">${item.quantity}</td>
+        <td class="px-4 py-3 text-right text-slate-500">${parseFloat(item.unit_price).toFixed(2)}</td>
+        <td class="px-4 py-3 text-right font-black text-slate-800">${parseFloat(item.line_total).toFixed(2)}</td>
+      `;
+      list.appendChild(row);
+    });
+
+    // Totals
+    $('viewSubtotal').textContent = `LKR ${parseFloat(invoice.subtotal).toFixed(2)}`;
+    $('viewDiscount').textContent = `- LKR ${parseFloat(invoice.discount_amount).toFixed(2)}`;
+    $('viewGrandTotal').textContent = `LKR ${parseFloat(invoice.total_amount).toFixed(2)}`;
+    $('viewBalance').textContent = `LKR ${parseFloat(balance).toFixed(2)}`;
+    
+    // Payment Input
+    $('collectAmount').value = parseFloat(balance).toFixed(2);
+
+    // Receipt Preview
+    $('rcptInvId').textContent = invoice.invoice_id;
+    $('rcptDate').textContent = new Date(invoice.created_at).toLocaleDateString();
+    $('rcptName').textContent = invoice.patient_name;
+    $('rcptDoctor').textContent = invoice.doctor_name || 'N/A';
+    $('rcptToken').textContent = invoice.token_number || 'N/A';
+    $('rcptTotal').textContent = `LKR ${parseFloat(invoice.total_amount).toFixed(2)}`;
+    
+    const rcptItems = $('rcptItems');
+    rcptItems.innerHTML = '';
+    items.forEach(item => {
+      rcptItems.innerHTML += `<div class="flex justify-between"><span>${item.description} x${item.quantity}</span><span class="font-bold">${parseFloat(item.line_total).toFixed(2)}</span></div>`;
+    });
+  }
+
+  window.quickPay = function(val) {
+    const bal = parseFloat(state.selectedBill.balance);
+    if (val === 'exact') $('collectAmount').value = bal.toFixed(2);
+    else $('collectAmount').value = parseFloat(val).toFixed(2);
+  };
+
+  $('postPaymentBtn').addEventListener('click', async () => {
+    const btn = $('postPaymentBtn');
+    const amount = parseFloat($('collectAmount').value);
+    const method = $('collectMethod').value;
+    
+    if (isNaN(amount) || amount <= 0) return alert('Enter valid amount');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<svg class="animate-spin h-5 w-5 mr-3" viewBox="0 0 24 24"><path fill="currentColor" d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/></svg> Processing...';
+
+    try {
+      const res = await fetch(`/billing/api/pay/${state.currentInvoiceId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, method })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // Success! Reload or update
+        await init();
+        alert('Payment processed successfully!');
+        if (data.status === 'Paid') {
+          $('billWorkingArea').classList.add('hidden');
+          $('emptyBillState').classList.remove('hidden');
+          state.currentInvoiceId = null;
+        } else {
+          selectBill(state.currentInvoiceId);
+        }
+      }
+    } catch (e) { console.error('Pay error:', e); }
+    finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg> Post Payment & Finalize';
+    }
+  });
+
+  $('queueSearch').addEventListener('input', renderQueue);
+  $('refreshPreviewBtn').addEventListener('click', () => state.selectedBill && updateUI());
+
+  init();
+});
+</script>
+{% endblock %}

@@ -28,7 +28,14 @@
           </div>
         </div>
         <div class="mt-4 text-sm text-slate-600 space-y-2">
+          {% if patient.date_of_birth %}
           <p><span class="font-semibold text-slate-700">DOB:</span> {{ patient.date_of_birth }}</p>
+          {% elif patient.birth_year %}
+          <p><span class="font-semibold text-slate-700">Birth Year:</span> {{ patient.birth_year }}</p>
+          <p><span class="font-semibold text-slate-700">DOB:</span> Not provided</p>
+          {% else %}
+          <p><span class="font-semibold text-slate-700">DOB:</span> Unknown</p>
+          {% endif %}
           <p><span class="font-semibold text-slate-700">Blood Group:</span> {{ patient.blood_group or 'N/A' }}</p>
           <p><span class="font-semibold text-slate-700">Phone:</span> {{ patient.phone_number }}</p>
           <p><span class="font-semibold text-slate-700">Email:</span> {{ patient.email or 'N/A' }}</p>

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="h-full bg-slate-50">
+<html lang="en" class="h-full bg-slate-50" style="overflow-x:hidden;">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -27,7 +27,7 @@
 </head>
 <body class="h-full text-slate-800 antialiased">
 <div class="min-h-full">
-  <div class="flex min-h-screen">
+  <div class="flex min-h-screen" style="max-width:100vw;overflow-x:hidden;">
     <aside class="hidden md:flex md:w-64 md:flex-col bg-white border-r border-slate-200">
       <div class="px-6 py-5 border-b border-slate-200">
         <h1 class="text-xl font-semibold text-med-700">MediCore</h1>
@@ -58,7 +58,7 @@
       </nav>
     </aside>
 
-    <div class="flex-1 flex flex-col">
+    <div class="flex-1 flex flex-col" style="min-width:0;overflow-x:hidden;">
       <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-4">
         <div class="flex items-center justify-between">
           <div>
@@ -89,7 +89,7 @@
         </div>
       </header>
 
-      <main class="flex-1 p-4 sm:p-6">
+      <main class="flex-1 p-4 sm:p-6" style="min-width:0;">
         {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
             <div class="mb-4 space-y-2">
@@ -107,6 +107,5 @@
   </div>
 </div>
 
-{% include 'partials/staff_chat_widget.html' %}
 </body>
 </html>

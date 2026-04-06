@@ -40,14 +40,23 @@ def _calculate_age(dob: date | None) -> int | None:
     return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
 
-def _estimate_dob_from_age(age: int) -> date:
-    today = datetime.utcnow().date()
-    year = today.year - age
-    try:
-        return date(year, today.month, today.day)
-    except ValueError:
-        # Handles leap-day edge case for non-leap years.
-        return date(year, 2, 28)
+def _calculate_age_from_birth_year(birth_year: int | None) -> int | None:
+    if birth_year is None:
+        return None
+    current_year = datetime.utcnow().date().year
+    return max(0, current_year - int(birth_year))
+
+
+def _derive_birth_year_from_age(age: int) -> int:
+    current_year = datetime.utcnow().date().year
+    return current_year - age
+
+
+def _calculate_age_from_record(dob: date | None, birth_year: int | None) -> int | None:
+    exact_age = _calculate_age(dob)
+    if exact_age is not None:
+        return exact_age
+    return _calculate_age_from_birth_year(birth_year)
 
 
 def _normalize_spaces(value: str) -> str:
@@ -93,8 +102,9 @@ def _patient_quick_payload(row: dict) -> dict:
     full_name = f"{first_name} {last_name}".strip()
     return {
         "patient_id": row.get("patient_id"),
+        "display_patient_id": row.get("display_patient_id") or row.get("patient_id"),
         "patient_name": full_name,
-        "age": _calculate_age(row.get("date_of_birth")),
+        "age": _calculate_age_from_record(row.get("date_of_birth"), row.get("birth_year")),
         "gender": row.get("gender") or "",
         "nic": row.get("nic_number") or "",
         "phone_number": row.get("phone_number") or "",
@@ -102,8 +112,11 @@ def _patient_quick_payload(row: dict) -> dict:
 
 
 def _load_patient_profile(patient_id: str) -> dict | None:
-    patient_query = """
-        SELECT p.patient_id, p.nic_number, p.first_name, p.last_name, p.date_of_birth,
+    has_birth_year = _patients_has_column("birth_year")
+    birth_year_select = "p.birth_year" if has_birth_year else "NULL AS birth_year"
+    patient_query = f"""
+        SELECT p.patient_id, p.nic_number, p.first_name, p.last_name, p.date_of_birth
+               , {birth_year_select},
                p.gender, p.phone_number, p.email, p.blood_group, p.address, p.city, p.district,
                mh.allergies, mh.chronic_conditions, mh.past_surgeries, mh.family_history
         FROM patients p
@@ -211,8 +224,12 @@ def _fetch_patients(search: str | None, page: int) -> tuple[list[dict], int]:
         params = [search_value] * 6
 
     count_query = f"SELECT COUNT(*) AS total FROM patients {filters}"
+    has_birth_year = _patients_has_column("birth_year")
+    birth_year_select = "birth_year" if has_birth_year else "NULL AS birth_year"
+
     data_query = f"""
-        SELECT patient_id, nic_number, first_name, last_name, date_of_birth,
+        SELECT patient_id, nic_number, first_name, last_name, date_of_birth
+               , {birth_year_select},
                gender, phone_number, blood_group
         FROM patients
         {filters}
@@ -267,16 +284,8 @@ def patient_directory():
 @login_required
 @role_required(ALLOWED_ROLES)
 def patient_register():
-    return render_template(
-        "patients/patient_register_form.html",
-        title="Patient Registration",
-        active_page="patients",
-        current_user={
-            "username": session.get("username", "User"),
-            "role": session.get("role", ""),
-        },
-        csrf_token=generate_csrf_token(),
-    )
+    flash("Patient registration is now integrated with Reception / Channeling Desk.", "info")
+    return redirect(url_for("appointments.channeling_desk"))
 
 
 @patients_bp.get("/quick-lookup")
@@ -295,13 +304,41 @@ def patient_quick_lookup():
             }
         )
 
-    query = """
-        SELECT patient_id, first_name, last_name, date_of_birth, gender, nic_number, phone_number
-        FROM patients
-        WHERE phone_number LIKE %s
-        ORDER BY updated_at DESC
-        LIMIT 10
-    """
+    has_patient_number = _patients_has_column("patient_number")
+    if has_patient_number:
+        has_birth_year = _patients_has_column("birth_year")
+        birth_year_select = "birth_year" if has_birth_year else "NULL AS birth_year"
+        query = """
+            SELECT patient_id,
+                   patient_number AS display_patient_id,
+                   first_name,
+                   last_name,
+                   date_of_birth,
+                   {birth_year_select},
+                   gender,
+                   nic_number,
+                   phone_number
+            FROM patients
+            WHERE phone_number LIKE %s
+            ORDER BY first_name ASC, last_name ASC, patient_id ASC
+        """.format(birth_year_select=birth_year_select)
+    else:
+        has_birth_year = _patients_has_column("birth_year")
+        birth_year_select = "birth_year" if has_birth_year else "NULL AS birth_year"
+        query = """
+            SELECT patient_id,
+                   patient_id AS display_patient_id,
+                   first_name,
+                   last_name,
+                   date_of_birth,
+                   {birth_year_select},
+                   gender,
+                   nic_number,
+                   phone_number
+            FROM patients
+            WHERE phone_number LIKE %s
+            ORDER BY first_name ASC, last_name ASC, patient_id ASC
+        """.format(birth_year_select=birth_year_select)
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(query, (f"%{phone_digits}%",))
         rows = cursor.fetchall() or []
@@ -311,7 +348,7 @@ def patient_quick_lookup():
         return jsonify(
             {
                 "status": "single",
-                "message": "Existing patient found.",
+                "message": "1 patient found. Please confirm selection.",
                 "patients": payload,
             }
         )
@@ -319,7 +356,7 @@ def patient_quick_lookup():
         return jsonify(
             {
                 "status": "multiple",
-                "message": "Multiple patients found. Please select one.",
+                "message": "Multiple patients found. Please select the correct patient.",
                 "patients": payload,
             }
         )
@@ -352,8 +389,9 @@ def patient_register_submit():
         flash(errors[0] if errors else "Invalid input.", "error")
         return redirect(url_for("patients.patient_register"))
 
-    date_of_birth = _estimate_dob_from_age(age)
+    birth_year = _derive_birth_year_from_age(age)
     first_name, last_name = _split_patient_name(patient_name)
+    has_birth_year = _patients_has_column("birth_year")
 
     duplicate_query = "SELECT patient_id FROM patients WHERE nic_number = %s LIMIT 1"
     with get_db_cursor(dictionary=True) as (_conn, cursor):
@@ -374,73 +412,141 @@ def patient_register_submit():
                 flash("Selected existing patient was not found.", "error")
                 return redirect(url_for("patients.patient_register"))
 
-            update_query = """
-                UPDATE patients
-                SET first_name = %s,
-                    last_name = %s,
-                    date_of_birth = %s,
-                    gender = %s,
-                    phone_number = %s,
-                    nic_number = %s
-                WHERE patient_id = %s
-            """
-            cursor.execute(
-                update_query,
-                (
-                    first_name,
-                    last_name,
-                    date_of_birth,
-                    gender,
-                    phone_number,
-                    nic_number or None,
-                    existing_patient_id,
-                ),
-            )
+            if has_birth_year:
+                update_query = """
+                    UPDATE patients
+                    SET first_name = %s,
+                        last_name = %s,
+                        date_of_birth = %s,
+                        birth_year = %s,
+                        gender = %s,
+                        phone_number = %s,
+                        nic_number = %s
+                    WHERE patient_id = %s
+                """
+                cursor.execute(
+                    update_query,
+                    (
+                        first_name,
+                        last_name,
+                        None,
+                        birth_year,
+                        gender,
+                        phone_number,
+                        nic_number or None,
+                        existing_patient_id,
+                    ),
+                )
+            else:
+                update_query = """
+                    UPDATE patients
+                    SET first_name = %s,
+                        last_name = %s,
+                        date_of_birth = %s,
+                        gender = %s,
+                        phone_number = %s,
+                        nic_number = %s
+                    WHERE patient_id = %s
+                """
+                cursor.execute(
+                    update_query,
+                    (
+                        first_name,
+                        last_name,
+                        None,
+                        gender,
+                        phone_number,
+                        nic_number or None,
+                        existing_patient_id,
+                    ),
+                )
             patient_id = existing_patient_id
             flash(f"Existing patient updated. ID: {patient_id}", "success")
         else:
             has_patient_number = _patients_has_column("patient_number")
             if has_patient_number:
                 patient_number = _generate_patient_number()
-                insert_query = """
-                    INSERT INTO patients (
-                        patient_number, nic_number, first_name, last_name, date_of_birth, gender, phone_number
+                if has_birth_year:
+                    insert_query = """
+                        INSERT INTO patients (
+                            patient_number, nic_number, first_name, last_name, date_of_birth, birth_year, gender, phone_number
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(
+                        insert_query,
+                        (
+                            patient_number,
+                            nic_number or None,
+                            first_name,
+                            last_name,
+                            None,
+                            birth_year,
+                            gender,
+                            phone_number,
+                        ),
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor.execute(
-                    insert_query,
-                    (
-                        patient_number,
-                        nic_number or None,
-                        first_name,
-                        last_name,
-                        date_of_birth,
-                        gender,
-                        phone_number,
-                    ),
-                )
+                else:
+                    insert_query = """
+                        INSERT INTO patients (
+                            patient_number, nic_number, first_name, last_name, date_of_birth, gender, phone_number
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(
+                        insert_query,
+                        (
+                            patient_number,
+                            nic_number or None,
+                            first_name,
+                            last_name,
+                            None,
+                            gender,
+                            phone_number,
+                        ),
+                    )
                 patient_id = str(cursor.lastrowid)
             else:
                 patient_id = _generate_patient_id()
-                insert_query = """
-                    INSERT INTO patients (
-                        patient_id, nic_number, first_name, last_name, date_of_birth, gender, phone_number
+                if has_birth_year:
+                    insert_query = """
+                        INSERT INTO patients (
+                            patient_id, nic_number, first_name, last_name, date_of_birth, birth_year, gender, phone_number
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(
+                        insert_query,
+                        (
+                            patient_id,
+                            nic_number or None,
+                            first_name,
+                            last_name,
+                            None,
+                            birth_year,
+                            gender,
+                            phone_number,
+                        ),
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """
-                cursor.execute(
-                    insert_query,
-                    (
-                        patient_id,
-                        nic_number or None,
-                        first_name,
-                        last_name,
-                        date_of_birth,
-                        gender,
-                        phone_number,
-                    ),
-                )
+                else:
+                    insert_query = """
+                        INSERT INTO patients (
+                            patient_id, nic_number, first_name, last_name, date_of_birth, gender, phone_number
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """
+                    cursor.execute(
+                        insert_query,
+                        (
+                            patient_id,
+                            nic_number or None,
+                            first_name,
+                            last_name,
+                            None,
+                            gender,
+                            phone_number,
+                        ),
+                    )
             flash(f"Patient registered successfully. ID: {patient_id}", "success")
 
     return redirect(url_for("patients.patient_directory", search=patient_id))
@@ -458,7 +564,7 @@ def patient_profile(patient_id: str):
     vitals = _load_vitals(patient_id)
     consultations = _load_consultations(patient_id)
     latest_vitals = vitals[0] if vitals else None
-    patient_age = _calculate_age(patient.get("date_of_birth"))
+    patient_age = _calculate_age_from_record(patient.get("date_of_birth"), patient.get("birth_year"))
 
     return render_template(
         "patients/patient_profile.html",

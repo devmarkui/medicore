@@ -1,0 +1,691 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* ── Global containment ── */
+  *, *::before, *::after { box-sizing: border-box; }
+  main.flex-1 { padding: 0 !important; max-width: 100%; overflow-x: hidden; }
+
+  /* ── MediCore Theme Tokens ── */
+  :root {
+    --mc-50:  #f0fdfa; --mc-100: #ccfbf1; --mc-200: #99f6e4;
+    --mc-500: #14b8a6; --mc-600: #0d9488; --mc-700: #0f766e;
+    --mc-800: #115e59; --mc-900: #134e4a;
+  }
+
+  /* ── Service tab styling ── */
+  .mc-tab {
+    padding: 6px 14px; font-size: 11px; font-weight: 700; border-radius: 9999px;
+    white-space: nowrap; transition: all .2s; cursor: pointer; border: none;
+    background: #f1f5f9; color: #64748b; flex-shrink: 0;
+  }
+  .mc-tab:hover { background: #e2e8f0; color: #334155; }
+  .mc-tab.active {
+    background: var(--mc-600); color: #fff;
+    box-shadow: 0 4px 12px -2px rgba(13,148,136,.45);
+  }
+
+  /* ── Scrollbar hide for tabs ── */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* ── Service card ── */
+  .svc-card {
+    background: #fff; padding: 14px; border-radius: 14px;
+    border: 1px solid #e2e8f0; cursor: pointer;
+    transition: all .15s ease; min-width: 0;
+  }
+  .svc-card:hover { border-color: var(--mc-500); box-shadow: 0 4px 12px rgba(13,148,136,.12); }
+  .svc-card:active { transform: scale(.97); }
+
+  /* ── Bill item row ── */
+  .bill-row {
+    background: #f8fafc; border-radius: 10px; padding: 10px 12px;
+    border: 1px solid #f1f5f9; display: flex; align-items: center; gap: 10px;
+    min-width: 0;
+  }
+
+  /* ── Token card glow ── */
+  .token-glow {
+    background: linear-gradient(135deg, var(--mc-700), var(--mc-600));
+    color: #fff; border-radius: 12px; padding: 6px 14px;
+    min-width: 70px; text-align: center;
+    box-shadow: 0 4px 16px -4px rgba(13,148,136,.5);
+  }
+
+  /* ── Remove button ── */
+  .bill-remove-btn {
+    width: 18px; height: 18px; border-radius: 50%; border: none;
+    background: #fee2e2; color: #ef4444; font-size: 11px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all .15s; flex-shrink: 0; line-height: 1; padding: 0;
+  }
+  .bill-remove-btn:hover { background: #ef4444; color: #fff; }
+
+  /* ── Fee separator row ── */
+  .bill-fee-row {
+    display: none; justify-content: space-between; align-items: center;
+    padding: 6px 10px; border-radius: 8px; background: var(--mc-50);
+    border: 1px dashed var(--mc-200);
+  }
+  .bill-fee-row.show {
+    display: flex;
+  }
+
+  /* ── Focus ring override ── */
+  input:focus, select:focus { outline: none; box-shadow: 0 0 0 2px var(--mc-200) !important; border-color: var(--mc-500) !important; }
+
+  /* ── Service grid responsive ── */
+  #serviceGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+  }
+</style>
+
+<!-- ══════════════════════════════════════════════ -->
+<!--  RECEPTION DESK — FULL-HEIGHT LAYOUT         -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="flex flex-col bg-slate-50" style="height:calc(100vh - 73px);overflow:hidden;max-width:100%;min-width:0;">
+
+  <!-- ╔══ ROW 1 — Patient Info ═══════════════════╗ -->
+  <div class="bg-white border-b border-slate-200 px-5 py-2.5 shrink-0">
+    <div class="flex items-center justify-between mb-1.5">
+      <h2 class="text-[11px] font-bold text-slate-700 uppercase tracking-wide">Patient Information</h2>
+      <div id="patientStatus" class="hidden">
+        <span class="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 tracking-wide">EXISTING PATIENT</span>
+      </div>
+    </div>
+    <div class="grid gap-2.5 items-end" style="grid-template-columns:repeat(12,minmax(0,1fr));">
+      <!-- Phone -->
+      <div class="col-span-2">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Phone *</label>
+        <div class="relative">
+          <input type="text" id="phoneInput" placeholder="07XXXXXXXX" maxlength="10" autocomplete="off"
+            class="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+          <div id="loadingPatient" class="absolute right-2.5 top-2 hidden" style="color:var(--mc-600);">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24"><path fill="currentColor" d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/></svg>
+          </div>
+        </div>
+      </div>
+      <!-- Name -->
+      <div class="col-span-3">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Full Name *</label>
+        <input type="text" id="fullNameInput" placeholder="Patient full name"
+          class="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" />
+      </div>
+      <!-- Gender -->
+      <div class="col-span-1">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Gender</label>
+        <select id="genderInput" class="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-lg text-sm">
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <!-- Age -->
+      <div class="col-span-1">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Age</label>
+        <input type="number" id="ageInput" placeholder="Yrs" min="0" max="120"
+          class="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" />
+      </div>
+      <!-- NIC -->
+      <div class="col-span-2">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">NIC / ID</label>
+        <input type="text" id="nicInput" placeholder="Optional"
+          class="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm" />
+      </div>
+      <!-- Actions -->
+      <div class="col-span-3 flex items-center gap-2">
+        <button type="button" id="clearPatientBtn" class="h-9 px-3 text-slate-400 hover:text-slate-600 text-[10px] font-bold uppercase tracking-wider">Clear</button>
+        <div id="patientInfoBadge" class="flex-1 h-9 px-3 bg-slate-100 rounded-lg flex items-center overflow-hidden">
+          <span class="text-[9px] text-slate-400 font-bold uppercase truncate">No Patient</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══ ROW 2 — Doctor / Date / Token ══════════╗ -->
+  <div class="bg-white border-b border-slate-200 px-5 py-2 shrink-0">
+    <div class="grid gap-2.5 items-end" style="grid-template-columns:repeat(12,minmax(0,1fr));">
+      <!-- Doctor -->
+      <div class="col-span-3">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Doctor</label>
+        <select id="doctorSelect" class="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold">
+          <option value="">— Select Doctor —</option>
+        </select>
+      </div>
+      <!-- Appointment Date -->
+      <div class="col-span-2">
+        <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Appointment Date</label>
+        <input type="date" id="appointmentDate"
+          class="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold" />
+      </div>
+      <!-- Next Token -->
+      <div class="col-span-2 flex items-end gap-2">
+        <div>
+          <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Next Token</label>
+          <div class="token-glow flex items-center justify-center h-9">
+            <span id="nextTokenDisplay" class="text-base font-black tracking-wider">--</span>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[9px] font-bold text-slate-400 mb-0.5 uppercase tracking-wider">Ongoing</label>
+          <div class="h-9 px-3 bg-slate-100 rounded-lg flex items-center justify-center">
+            <span id="ongoingTokenDisplay" class="text-xs font-bold text-slate-500">--</span>
+          </div>
+        </div>
+      </div>
+      <!-- Doctor Fee Summary (compact) -->
+      <div class="col-span-5 flex items-end justify-end gap-3" style="min-width:0;">
+        <div class="text-right">
+          <span class="text-[9px] text-slate-400 font-bold uppercase block">Doctor Fee</span>
+          <span id="doctorFeeDisplay" class="text-xs font-black text-slate-700">LKR 0.00</span>
+        </div>
+        <div class="text-right">
+          <span class="text-[9px] text-slate-400 font-bold uppercase block">Hospital Fee</span>
+          <span id="hospitalFeeDisplay" class="text-xs font-black text-slate-700">LKR 0.00</span>
+        </div>
+        <div class="text-right">
+          <span class="text-[9px] font-bold uppercase block" style="color:var(--mc-600);">Channeling Total</span>
+          <span id="channelingTotalDisplay" class="text-sm font-black" style="color:var(--mc-700);">LKR 0.00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ╔══ MAIN WORKSPACE — Services + Bill ═══════╗ -->
+  <div class="flex-1 flex overflow-hidden" style="min-width:0;">
+
+    <!-- ┌── LEFT: Services (≈70%) ──┐ -->
+    <div class="flex-1 flex flex-col overflow-hidden border-r border-slate-200" style="min-width:0;">
+      <!-- Tabs + Search -->
+      <div class="bg-white px-5 py-2.5 border-b border-slate-100 shrink-0">
+        <div class="flex items-center justify-between gap-3" style="min-width:0;">
+          <div id="serviceTabs" class="flex gap-1 overflow-x-auto no-scrollbar" style="min-width:0;flex:1 1 0%;">
+            <button class="mc-tab active" data-category="0">ALL SERVICES</button>
+          </div>
+          <div class="relative shrink-0" style="width:clamp(140px,20%,220px);">
+            <input type="text" id="serviceSearch" placeholder="Search service..."
+              class="w-full h-8 pl-8 pr-3 bg-slate-50 border border-slate-200 rounded-full text-xs" />
+            <svg class="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+      <!-- Services Grid -->
+      <div id="serviceGrid" class="flex-1 overflow-y-auto p-4 content-start bg-slate-50/80">
+        <!-- cards injected -->
+      </div>
+    </div>
+
+    <!-- ┌── RIGHT: Bill Summary (≈30%) ──┐ -->
+    <div class="flex flex-col bg-white overflow-hidden" style="width:clamp(260px,28%,340px);flex-shrink:0;">
+      <!-- Header -->
+      <div class="px-5 py-3 flex justify-between items-center shrink-0" style="background:var(--mc-800);">
+        <h3 class="text-xs font-bold text-white uppercase tracking-widest">Bill Summary</h3>
+        <span id="itemCount" class="text-[9px] font-bold px-2 py-0.5 rounded-full" style="background:var(--mc-500);color:#fff;">0 ITEMS</span>
+      </div>
+      <!-- Items List -->
+      <div id="billList" class="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        <div id="emptyBillState" class="h-full flex flex-col items-center justify-center text-slate-300">
+          <svg class="w-10 h-10 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/></svg>
+          <p class="text-[10px] font-semibold">No services selected</p>
+        </div>
+      </div>
+      <!-- Fee Rows + Totals -->
+      <div class="border-t border-slate-100 px-5 py-3 space-y-2 bg-slate-50/60 shrink-0">
+        <!-- Doctor & Hospital Fee -->
+        <div id="doctorFeeRow" class="bill-fee-row">
+          <span class="text-[9px] font-bold text-slate-600 uppercase">Doctor Fee</span>
+          <span id="billDoctorFee" class="text-[10px] font-black text-slate-700">LKR 0.00</span>
+        </div>
+        <div id="hospitalFeeRow" class="bill-fee-row">
+          <span class="text-[9px] font-bold text-slate-600 uppercase">Hospital Fee</span>
+          <span id="billHospitalFee" class="text-[10px] font-black text-slate-700">LKR 0.00</span>
+        </div>
+        <!-- Services subtotal -->
+        <div class="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+          <span>Services</span>
+          <span id="servicesSubDisplay">LKR 0.00</span>
+        </div>
+        <div class="flex justify-between text-[10px] font-bold text-slate-500 uppercase">
+          <span>Subtotal</span>
+          <span id="subtotalDisplay">LKR 0.00</span>
+        </div>
+        <div class="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+          <span>Discount (LKR)</span>
+          <input type="number" id="discountInput" value="0" min="0" step="1"
+            class="w-20 h-6 text-right bg-white border border-slate-200 rounded px-2 text-[10px] font-bold" />
+        </div>
+        <div class="pt-2 border-t border-slate-200 flex justify-between items-end">
+          <div>
+            <p class="text-[9px] font-bold uppercase leading-none" style="color:var(--mc-600);">Grand Total</p>
+            <p id="totalDisplay" class="text-xl font-black leading-tight" style="color:var(--mc-800);">LKR 0.00</p>
+          </div>
+        </div>
+        <select id="paymentMethod" class="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold">
+          <option value="Cash">CASH PAYMENT</option>
+          <option value="Card">CARD PAYMENT</option>
+          <option value="Bank Transfer">BANK TRANSFER</option>
+        </select>
+        <div class="grid grid-cols-2 gap-2">
+          <button id="clearBillBtn" class="h-10 bg-slate-200 text-slate-600 rounded-xl text-[10px] font-bold uppercase hover:bg-slate-300 transition">Clear</button>
+          <button id="goBillingBtn" class="h-10 text-white rounded-xl text-[10px] font-bold uppercase transition disabled:opacity-40 flex items-center justify-center gap-2" style="background:var(--mc-600);">
+            GO TO BILLING
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- ══════════════════════════════════════════════ -->
+<!--  JAVASCRIPT ENGINE                            -->
+<!-- ══════════════════════════════════════════════ -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+  // ── STATE ──
+  const state = {
+    patient: null,
+    categories: [],
+    allItems: [],
+    currentCategory: 0,
+    cart: [],
+    doctors: [],
+    doctorMeta: null
+  };
+
+  // ── DOM REFS ──
+  const $ = id => document.getElementById(id);
+  const phoneInput       = $('phoneInput');
+  const fullNameInput     = $('fullNameInput');
+  const genderInput       = $('genderInput');
+  const ageInput          = $('ageInput');
+  const nicInput          = $('nicInput');
+  const patientStatus     = $('patientStatus');
+  const patientInfoBadge  = $('patientInfoBadge');
+  const doctorSelect      = $('doctorSelect');
+  const appointmentDate   = $('appointmentDate');
+  const nextTokenDisplay  = $('nextTokenDisplay');
+  const ongoingTokenDisplay = $('ongoingTokenDisplay');
+  const doctorFeeDisplay  = $('doctorFeeDisplay');
+  const hospitalFeeDisplay = $('hospitalFeeDisplay');
+  const channelingTotalDisplay = $('channelingTotalDisplay');
+  const serviceTabs       = $('serviceTabs');
+  const serviceGrid       = $('serviceGrid');
+  const serviceSearch     = $('serviceSearch');
+  const billList          = $('billList');
+  const emptyBillState    = $('emptyBillState');
+  const itemCountDisplay  = $('itemCount');
+  const subtotalDisplay   = $('subtotalDisplay');
+  const totalDisplay      = $('totalDisplay');
+  const discountInput     = $('discountInput');
+  const goBillingBtn      = $('goBillingBtn');
+
+  // ── INIT ──
+  async function init() {
+    // Set today's date
+    const today = new Date().toISOString().slice(0, 10);
+    appointmentDate.value = today;
+
+    try {
+      const [catRes, itemRes, docRes] = await Promise.all([
+        fetch('/appointments/api/services/categories'),
+        fetch('/appointments/api/services/all'),
+        fetch('/appointments/api/doctors?active=true')
+      ]);
+      const catData  = await catRes.json();
+      const itemData = await itemRes.json();
+      const docData  = await docRes.json();
+
+      state.categories = catData.categories || [];
+      state.allItems   = itemData.items || [];
+      state.doctors    = docData.doctors || [];
+
+      renderTabs();
+      renderItems();
+      renderDoctors();
+    } catch (err) {
+      console.error('Init failed:', err);
+    }
+  }
+
+  // ── DOCTORS ──
+  function renderDoctors() {
+    doctorSelect.innerHTML = '<option value="">— Select Doctor —</option>';
+    state.doctors.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.id || d.doctor_id;
+      opt.textContent = d.doctor_name;
+      doctorSelect.appendChild(opt);
+    });
+  }
+
+  doctorSelect.addEventListener('change', () => {
+    updateDoctorFeesUI();
+    fetchDoctorMeta();
+  });
+  appointmentDate.addEventListener('change', fetchDoctorMeta);
+
+  function updateDoctorFeesUI() {
+    const docId = doctorSelect.value;
+    const doc = state.doctors.find(d => (d.id == docId || d.doctor_id == docId));
+    
+    if (doc) {
+      doctorFeeDisplay.textContent = `LKR ${parseFloat(doc.doctor_fee || 0).toFixed(2)}`;
+      hospitalFeeDisplay.textContent = `LKR ${parseFloat(doc.hospital_fee || 0).toFixed(2)}`;
+    } else {
+      doctorFeeDisplay.textContent = 'LKR 0.00';
+      hospitalFeeDisplay.textContent = 'LKR 0.00';
+    }
+    calcTotals();
+  }
+
+  async function fetchDoctorMeta() {
+    const doctorId = doctorSelect.value;
+    const dateVal  = appointmentDate.value;
+    
+    if (!doctorId || !dateVal) {
+      nextTokenDisplay.textContent = '--';
+      ongoingTokenDisplay.textContent = '--';
+      channelingTotalDisplay.textContent = 'LKR 0.00';
+      state.doctorMeta = null;
+      calcTotals();
+      return;
+    }
+    try {
+      const res = await fetch(`/appointments/channeling-desk/doctor-meta?doctor_id=${doctorId}&date=${dateVal}`);
+      const data = await res.json();
+      if (data.ok) {
+        state.doctorMeta = data;
+        nextTokenDisplay.textContent = data.next_token || '--';
+        ongoingTokenDisplay.textContent = data.ongoing_token || '--';
+        channelingTotalDisplay.textContent = `LKR ${parseFloat(data.total_amount || 0).toFixed(2)}`;
+      }
+    } catch (e) { console.error('Doctor meta error:', e); }
+  }
+
+  // ── TABS ──
+  function renderTabs() {
+    const existing = serviceTabs.querySelectorAll('.mc-tab:not([data-category="0"])');
+    existing.forEach(t => t.remove());
+
+    state.categories.forEach(cat => {
+      const btn = document.createElement('button');
+      btn.className = 'mc-tab';
+      btn.textContent = cat.category_name.toUpperCase();
+      btn.dataset.category = cat.category_id;
+      btn.addEventListener('click', () => {
+        state.currentCategory = parseInt(cat.category_id);
+        updateTabStyle();
+        renderItems();
+      });
+      serviceTabs.appendChild(btn);
+    });
+
+    serviceTabs.querySelector('[data-category="0"]').addEventListener('click', () => {
+      state.currentCategory = 0;
+      updateTabStyle();
+      renderItems();
+    });
+  }
+
+  function updateTabStyle() {
+    serviceTabs.querySelectorAll('.mc-tab').forEach(t => {
+      t.classList.toggle('active', parseInt(t.dataset.category) === state.currentCategory);
+    });
+  }
+
+  // ── SERVICE ITEMS ──
+  function renderItems() {
+    const q = serviceSearch.value.toLowerCase();
+    serviceGrid.innerHTML = '';
+
+    const filtered = state.allItems.filter(item => {
+      const catOk = state.currentCategory === 0 || parseInt(item.category_id) === state.currentCategory;
+      const qOk   = item.item_name.toLowerCase().includes(q) || (item.item_code || '').toLowerCase().includes(q);
+      return catOk && qOk;
+    });
+
+    if (filtered.length === 0) {
+      serviceGrid.innerHTML = '<div class="col-span-full flex items-center justify-center text-slate-300 py-16"><p class="text-xs font-semibold">No services found</p></div>';
+      return;
+    }
+
+    filtered.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'svc-card';
+      card.innerHTML = `
+        <div class="flex justify-between items-start mb-1.5">
+          <span class="text-[9px] font-black uppercase" style="color:var(--mc-600);">${item.category_name || ''}</span>
+          <span class="text-[9px] font-bold text-slate-300 font-mono">${item.item_code || ''}</span>
+        </div>
+        <h4 class="text-[11px] font-bold text-slate-700 mb-2 leading-snug">${item.item_name}</h4>
+        <div class="text-xs font-black text-slate-800">LKR ${parseFloat(item.price).toFixed(2)}</div>
+      `;
+      card.addEventListener('click', () => addToCart(item));
+      serviceGrid.appendChild(card);
+    });
+  }
+
+  serviceSearch.addEventListener('input', renderItems);
+
+  // ── CART ──
+  function addToCart(item) {
+    const ex = state.cart.find(c => c.item_id === item.item_id);
+    if (ex) { ex.quantity++; } else {
+      state.cart.push({ item_id: item.item_id, item_code: item.item_code || '', item_name: item.item_name, price: parseFloat(item.price), quantity: 1 });
+    }
+    updateCartUI();
+  }
+
+  function updateCartUI() {
+    billList.innerHTML = '';
+    if (state.cart.length === 0) {
+      billList.appendChild(emptyBillState);
+      itemCountDisplay.textContent = '0 ITEMS';
+    } else {
+      itemCountDisplay.textContent = `${state.cart.length} ITEMS`;
+      state.cart.forEach((item, idx) => {
+        const row = document.createElement('div');
+        row.className = 'bill-row';
+        row.innerHTML = `
+          <div class="flex-1 overflow-hidden" style="min-width:0;">
+            <h5 class="text-[10px] font-bold text-slate-800 truncate">${item.item_name}</h5>
+            <p class="text-[8px] font-bold text-slate-400 uppercase">${item.item_code} · LKR ${item.price.toFixed(2)}</p>
+          </div>
+          <div class="flex items-center gap-1 bg-white rounded-md border border-slate-200 px-1 py-0.5">
+            <button class="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-red-500 text-xs font-bold" data-action="dec" data-idx="${idx}">−</button>
+            <span class="text-[10px] font-bold w-4 text-center">${item.quantity}</span>
+            <button class="w-5 h-5 flex items-center justify-center text-slate-400 text-xs font-bold" data-action="inc" data-idx="${idx}" style="color:var(--mc-600);">+</button>
+          </div>
+          <div class="text-right min-w-[50px]">
+            <p class="text-[10px] font-black text-slate-800">LKR ${(item.price * item.quantity).toFixed(2)}</p>
+          </div>
+          <button class="bill-remove-btn" data-action="remove" data-idx="${idx}" title="Remove item">×</button>
+        `;
+        billList.appendChild(row);
+      });
+    }
+    calcTotals();
+  }
+
+  // Delegated click for qty / remove buttons
+  billList.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.idx);
+    const action = btn.dataset.action;
+    if (action === 'dec') {
+      state.cart[idx].quantity--;
+      if (state.cart[idx].quantity < 1) state.cart.splice(idx, 1);
+    } else if (action === 'inc') {
+      state.cart[idx].quantity++;
+    } else if (action === 'remove') {
+      state.cart.splice(idx, 1);
+    }
+    updateCartUI();
+  });
+
+  function calcTotals() {
+    // Services total
+    const servicesTotal = state.cart.reduce((s, i) => s + i.price * i.quantity, 0);
+
+    // Doctor fees (from locally loaded state.doctors for instantaneous UI)
+    const selectedDocId = doctorSelect.value;
+    const selectedDoc = state.doctors.find(d => (d.id == selectedDocId || d.doctor_id == selectedDocId));
+    
+    const docFee = selectedDoc ? parseFloat(selectedDoc.doctor_fee) || 0 : 0;
+    const hospFee = selectedDoc ? parseFloat(selectedDoc.hospital_fee) || 0 : 0;
+
+    // Show/hide fee rows in bill summary
+    const doctorFeeRow = $('doctorFeeRow');
+    const hospitalFeeRow = $('hospitalFeeRow');
+    const billDoctorFee = $('billDoctorFee');
+    const billHospitalFee = $('billHospitalFee');
+    const servicesSubDisplay = $('servicesSubDisplay');
+
+    if (docFee > 0) {
+      doctorFeeRow.classList.add('show');
+      billDoctorFee.textContent = `LKR ${docFee.toFixed(2)}`;
+    } else {
+      doctorFeeRow.classList.remove('show');
+    }
+    if (hospFee > 0) {
+      hospitalFeeRow.classList.add('show');
+      billHospitalFee.textContent = `LKR ${hospFee.toFixed(2)}`;
+    } else {
+      hospitalFeeRow.classList.remove('show');
+    }
+
+    servicesSubDisplay.textContent = `LKR ${servicesTotal.toFixed(2)}`;
+
+    // Subtotal = services + doctor fee + hospital fee
+    const subtotal = servicesTotal + docFee + hospFee;
+    const disc = parseFloat(discountInput.value) || 0;
+    const total = Math.max(0, subtotal - disc);
+
+    subtotalDisplay.textContent = `LKR ${subtotal.toFixed(2)}`;
+    totalDisplay.textContent = `LKR ${total.toFixed(2)}`;
+    goBillingBtn.disabled = (state.cart.length === 0 && docFee === 0);
+  }
+
+  discountInput.addEventListener('input', calcTotals);
+
+  $('clearBillBtn').addEventListener('click', () => {
+    state.cart = [];
+    updateCartUI();
+  });
+
+  // ── PATIENT AUTO-SEARCH ──
+  phoneInput.addEventListener('input', (e) => {
+    const phone = e.target.value.replace(/\D/g, '');
+    e.target.value = phone;
+    if (phone.length === 10) lookupPatient(phone);
+    else resetPatientFields();
+  });
+
+  async function lookupPatient(phone) {
+    $('loadingPatient').classList.remove('hidden');
+    try {
+      const res = await fetch(`/appointments/channeling-desk/patient-lookup?phone=${phone}`);
+      const data = await res.json();
+      if (data.ok && data.patients && data.patients.length > 0) {
+        fillPatient(data.patients[0]);
+      } else {
+        patientStatus.classList.add('hidden');
+        patientInfoBadge.innerHTML = `<span class="text-[9px] font-bold uppercase" style="color:var(--mc-600);">New Patient</span>`;
+        state.patient = null;
+      }
+    } catch (e) { console.error('Lookup fail:', e); }
+    finally { $('loadingPatient').classList.add('hidden'); }
+  }
+
+  function fillPatient(p) {
+    state.patient = p;
+    fullNameInput.value = p.patient_name || '';
+    genderInput.value = p.gender || 'Male';
+    ageInput.value = p.age || '';
+    nicInput.value = p.nic || '';
+    patientStatus.classList.remove('hidden');
+    patientInfoBadge.innerHTML = `
+      <div class="flex items-center gap-1.5">
+        <span class="text-[9px] text-slate-800 font-black uppercase truncate">${p.patient_name}</span>
+        <span class="text-[8px] font-bold bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">${p.display_patient_id || ''}</span>
+      </div>`;
+  }
+
+  function resetPatientFields() {
+    state.patient = null;
+    patientStatus.classList.add('hidden');
+    patientInfoBadge.innerHTML = '<span class="text-[9px] text-slate-400 font-bold uppercase truncate">No Patient</span>';
+  }
+
+  $('clearPatientBtn').addEventListener('click', () => {
+    phoneInput.value = ''; fullNameInput.value = ''; ageInput.value = ''; nicInput.value = '';
+    resetPatientFields();
+  });
+
+  // ── CONFIRM & REDIRECT ──
+  goBillingBtn.addEventListener('click', () => {
+    if (!phoneInput.value || !fullNameInput.value) { 
+      alert('Patient information is required.'); 
+      phoneInput.focus();
+      return; 
+    }
+    processPayment();
+  });
+
+  async function processPayment() {
+    const btn = goBillingBtn;
+    const originalText = btn.innerHTML;
+    btn.disabled = true; 
+    btn.innerHTML = `
+      <svg class="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24"><path fill="currentColor" d="M12,4V2A10,10 0 0,0 2,12H4A8,8 0 0,1 12,4Z"/></svg>
+      SAVING...
+    `;
+    
+    const payload = {
+      patient_id: state.patient ? state.patient.patient_id : null,
+      patient_new: !state.patient ? { name: fullNameInput.value, phone: phoneInput.value, gender: genderInput.value, age: ageInput.value, nic: nicInput.value } : null,
+      items: state.cart,
+      discount: parseFloat(discountInput.value) || 0,
+      payment_method: $('paymentMethod').value,
+      doctor_id: doctorSelect.value || null,
+      appointment_date: appointmentDate.value || null,
+      token_number: state.doctorMeta ? state.doctorMeta.next_token : null,
+      csrf_token: "{{ csrf_token }}"
+    };
+    
+    try {
+      const res = await fetch('/reception/confirm', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
+      const data = await res.json();
+      if (data.status === 'success') {
+        window.location.href = `/billing?invoice_id=${data.invoice_id}`;
+      } else {
+        alert('Error: ' + (data.message || 'Unknown')); 
+        btn.disabled = false; 
+        btn.innerHTML = originalText;
+      }
+    } catch (e) { 
+      alert('Server error occurred while saving the bill.'); 
+      btn.disabled = false; 
+      btn.innerHTML = originalText;
+    }
+  }
+
+  // ── GO ──
+  init();
+});
+</script>
+{% endblock %}

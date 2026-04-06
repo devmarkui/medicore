@@ -25,6 +25,7 @@ DROP TABLE IF EXISTS invoices;
 DROP TABLE IF EXISTS patient_vitals;
 DROP TABLE IF EXISTS medical_history;
 DROP TABLE IF EXISTS appointments;
+DROP TABLE IF EXISTS doctors;
 DROP TABLE IF EXISTS drugs_master;
 DROP TABLE IF EXISTS patients;
 DROP TABLE IF EXISTS users;
@@ -87,13 +88,29 @@ CREATE TABLE users (
         REFERENCES departments(department_id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE doctors (
+    doctor_id BIGINT UNSIGNED PRIMARY KEY,
+    doctor_name VARCHAR(200) NOT NULL,
+    doctor_code VARCHAR(64) NOT NULL UNIQUE,
+    specialization VARCHAR(120),
+    doctor_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    hospital_fee DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_doctors_active_name (is_active, doctor_name),
+    CONSTRAINT fk_doctors_user FOREIGN KEY (doctor_id)
+        REFERENCES users(user_id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE patients (
     patient_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     patient_number VARCHAR(20) NOT NULL UNIQUE,
     nic_number VARCHAR(20) UNIQUE,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
-    date_of_birth DATE NOT NULL,
+    date_of_birth DATE NULL,
+    birth_year SMALLINT,
     gender ENUM('Male','Female','Other') NOT NULL,
     phone_number VARCHAR(25) NOT NULL,
     email VARCHAR(190),
@@ -133,10 +150,12 @@ CREATE TABLE appointments (
     telehealth_link VARCHAR(255),
     reason_for_visit VARCHAR(255) NOT NULL,
     status ENUM('Scheduled','Checked-In','Completed','Cancelled') NOT NULL DEFAULT 'Scheduled',
+    token_number INT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_appointments_patient (patient_id),
     INDEX idx_appointments_doctor (doctor_id),
     INDEX idx_appointments_date (appointment_date),
+    INDEX idx_appointments_doctor_date_token (doctor_id, appointment_date, token_number),
     CONSTRAINT fk_appointments_patient FOREIGN KEY (patient_id)
         REFERENCES patients(patient_id) ON DELETE RESTRICT ON UPDATE CASCADE,
     CONSTRAINT fk_appointments_doctor FOREIGN KEY (doctor_id)
@@ -480,7 +499,7 @@ INSERT INTO users (
 ) VALUES (
     (SELECT department_id FROM departments WHERE department_name = 'General Practice' LIMIT 1),
     'admin@medicore.local',
-    '$argon2id$v=19$m=65536,t=3,p=4$e+4AWclFMwZN6YGxTtqJvQ$XP6HmKkyDDC0o7qbJgXnK8XIsHR50DDZNpyICDreU1k',
+    '$argon2id$v=19$m=65536,t=3,p=4$KMLjJE2B6BwWBJiaYfwvjg$eUq9Ug7tjTDH3II87DgeIR16ssq02ZoEWrzHPsdHo/0',
          'System Admin',
     'System',
     'Admin',

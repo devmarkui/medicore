@@ -1,0 +1,278 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900">Services & Categories</h1>
+            <p class="text-slate-500 mt-1">Manage clinic service tabs and items for the reception desk.</p>
+        </div>
+        <div class="flex gap-3">
+            <button id="addCategoryBtn" class="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg font-semibold hover:bg-blue-100 transition border border-blue-200">
+                + New Category
+            </button>
+            <button id="addItemBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition">
+                + New Service Item
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs Container -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="flex border-b border-slate-200 bg-slate-50/50 p-1">
+            <button class="tab-btn px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 active" data-tab="categories">
+                Service Categories (Tabs)
+            </button>
+            <button class="tab-btn px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 text-slate-500 hover:text-slate-700" data-tab="items">
+                Service Items (Products)
+            </button>
+        </div>
+
+        <!-- Categories Panel -->
+        <div id="categories-panel" class="tab-panel p-6">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100">
+                            <th class="px-4 py-4 font-semibold">Display Order</th>
+                            <th class="px-4 py-4 font-semibold">Category Name</th>
+                            <th class="px-4 py-4 font-semibold">Icon</th>
+                            <th class="px-4 py-4 font-semibold">Status</th>
+                            <th class="px-4 py-4 font-semibold text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        {% for category in categories %}
+                        <tr class="hover:bg-slate-50/50 transition">
+                            <td class="px-4 py-4">
+                                <span class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-mono">{{ category.display_order }}</span>
+                            </td>
+                            <td class="px-4 py-4">
+                                <p class="font-bold text-slate-900">{{ category.category_name }}</p>
+                                <p class="text-xs text-slate-400">{{ category.description or 'No description' }}</p>
+                            </td>
+                            <td class="px-4 py-4">
+                                <span class="text-slate-500"><i class="{{ category.icon_class or 'icon-box' }}"></i></span>
+                                <span class="text-xs text-slate-400 ml-1">{{ category.icon_class or '-' }}</span>
+                            </td>
+                            <td class="px-4 py-4">
+                                {% if category.is_active %}
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active
+                                </span>
+                                {% else %}
+                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Inactive
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-4 text-right space-x-2">
+                                <button class="text-slate-400 hover:text-blue-600 transition p-1" title="Edit">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M18.364 4.364a9 9 0 1112.728 12.728A3.359 3.359 0 0118.364 4.364z" /></svg>
+                                </button>
+                                <form action="{{ url_for('settings.toggle_service_category', category_id=category.category_id) }}" method="POST" class="inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button type="submit" class="text-slate-400 hover:text-amber-600 transition p-1" title="Toggle Status">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Items Panel -->
+        <div id="items-panel" class="tab-panel hidden p-6">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100">
+                            <th class="px-4 py-4 font-semibold">Code/ID</th>
+                            <th class="px-4 py-4 font-semibold">Item Name</th>
+                            <th class="px-4 py-4 font-semibold">Category</th>
+                            <th class="px-4 py-4 font-semibold">Price</th>
+                            <th class="px-4 py-4 font-semibold">Status</th>
+                            <th class="px-4 py-4 font-semibold text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-50">
+                        {% for category in categories %}
+                          {% set outer_loop = loop %}
+                          {% with items = [] %}
+                            {# Note: In a real app, we'd pass items explicitly or have a helper. 
+                               The current routes load items into categories.items #}
+                            {% for item in category.items or [] %}
+                            <tr class="hover:bg-slate-50/50 transition">
+                                <td class="px-4 py-4">
+                                    <span class="bg-blue-50 text-blue-600 px-2 py-1 rounded text-xs font-mono">{{ item.item_code }}</span>
+                                </td>
+                                <td class="px-4 py-4">
+                                    <p class="font-bold text-slate-900">{{ item.item_name }}</p>
+                                    <p class="text-xs text-slate-400">{{ item.description or 'No extra info' }}</p>
+                                </td>
+                                <td class="px-4 py-4">
+                                    <span class="text-sm text-slate-600">{{ category.category_name }}</span>
+                                </td>
+                                <td class="px-4 py-4">
+                                    <span class="text-sm font-bold text-slate-900">Rs. {{ "%.2f"|format(item.price) }}</span>
+                                </td>
+                                <td class="px-4 py-4">
+                                    {% if item.is_active %}
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active
+                                    </span>
+                                    {% else %}
+                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Inactive
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="px-4 py-4 text-right space-x-2">
+                                    <button class="text-slate-400 hover:text-blue-600 transition p-1">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M18.364 4.364a9 9 0 1112.728 12.728A3.359 3.359 0 0118.364 4.364z" /></svg>
+                                    </button>
+                                    <form action="{{ url_for('settings.toggle_service_item', item_id=item.item_id) }}" method="POST" class="inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                        <button type="submit" class="text-slate-400 hover:text-amber-600 transition p-1">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                          {% endwith %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Category Modal -->
+<div id="categoryModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-2xl w-full max-w-md p-8 shadow-2xl">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-slate-900">Add New Category</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+        <form method="POST" action="{{ url_for('settings.add_service_category') }}" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Category Name *</label>
+                <input type="text" name="category_name" placeholder="e.g., Laboratory" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Icon Class</label>
+                <input type="text" name="icon_class" placeholder="icon-flask, icon-stethoscope" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
+                <textarea name="description" rows="3" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+            </div>
+            <button type="submit" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">
+                Create Category
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Add Item Modal -->
+<div id="itemModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-2xl w-full max-w-lg p-8 shadow-2xl">
+        <div class="flex justify-between items-center mb-6">
+            <h3 class="text-xl font-bold text-slate-900">Add Service Item</h3>
+            <button class="close-modal text-slate-400 hover:text-slate-600">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+        </div>
+        <form method="POST" action="{{ url_for('settings.add_service_item') }}" class="grid grid-cols-2 gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Item Code *</label>
+                <input type="text" name="item_code" placeholder="OPD001" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
+            </div>
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Item Name *</label>
+                <input type="text" name="item_name" placeholder="General Consultation" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
+            </div>
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Category *</label>
+                <select name="category_id" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
+                    <option value="">Select Category</option>
+                    {% for cat in categories %}
+                      {% if cat.category_id != 1 %}
+                        <option value="{{ cat.category_id }}">{{ cat.category_name }}</option>
+                      {% endif %}
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-span-1">
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Price (LKR) *</label>
+                <input type="number" name="price" placeholder="500.00" step="0.01" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
+            </div>
+            <div class="col-span-2">
+                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
+                <textarea name="description" rows="2" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+            </div>
+            <div class="col-span-2 pt-2">
+                <button type="submit" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition shadow-lg shadow-green-200">
+                    Add Service Item
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Tab switching
+    const tabs = document.querySelectorAll('.tab-btn');
+    const panels = document.querySelectorAll('.tab-panel');
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => {
+                t.classList.remove('active', 'bg-white', 'shadow-sm', 'text-blue-600');
+                t.classList.add('text-slate-500');
+            });
+            tab.classList.add('active', 'bg-white', 'shadow-sm', 'text-blue-600');
+            tab.classList.remove('text-slate-500');
+
+            panels.forEach(p => p.classList.add('hidden'));
+            document.getElementById(tab.dataset.tab + '-panel').classList.remove('hidden');
+        });
+    });
+
+    // Modal logic
+    const categoryModal = document.getElementById('categoryModal');
+    const itemModal = document.getElementById('itemModal');
+    
+    document.getElementById('addCategoryBtn').addEventListener('click', () => categoryModal.classList.remove('hidden'));
+    document.getElementById('addItemBtn').addEventListener('click', () => itemModal.classList.remove('hidden'));
+    
+    document.querySelectorAll('.close-modal').forEach(btn => {
+        btn.addEventListener('click', () => {
+            categoryModal.classList.add('hidden');
+            itemModal.classList.add('hidden');
+        });
+    });
+
+    // Close on outside click
+    window.addEventListener('click', (e) => {
+        if (e.target === categoryModal) categoryModal.classList.add('hidden');
+        if (e.target === itemModal) itemModal.classList.add('hidden');
+    });
+});
+</script>
+
+<style>
+    .tab-btn.active { background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); color: #2563eb; }
+</style>
+{% endblock %}
+

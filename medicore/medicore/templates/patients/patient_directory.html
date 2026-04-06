@@ -11,7 +11,7 @@
         <h3 class="text-lg font-semibold text-slate-900">Find a patient</h3>
         <p class="text-sm text-slate-500">Search by Patient ID, NIC, name, or phone number.</p>
       </div>
-      <a href="{{ url_for('patients.patient_register') }}" class="inline-flex items-center justify-center rounded-lg bg-med-600 px-4 py-2 text-sm font-medium text-white hover:bg-med-700">Register Patient</a>
+      <a href="{{ url_for('appointments.channeling_desk') }}" class="inline-flex items-center justify-center rounded-lg bg-med-600 px-4 py-2 text-sm font-medium text-white hover:bg-med-700">Reception Desk</a>
     </div>
     <form method="get" action="{{ url_for('patients.patient_directory') }}" class="mt-4">
       <div class="flex flex-col md:flex-row gap-3">
@@ -53,7 +53,7 @@
             </td>
             <td class="px-5 py-3">{{ patient.nic_number }}</td>
             <td class="px-5 py-3">{{ patient.phone_number }}</td>
-            <td class="px-5 py-3">{{ patient.date_of_birth }}</td>
+            <td class="px-5 py-3">{{ patient.date_of_birth or ('Birth Year: ' ~ patient.birth_year if patient.birth_year else 'DOB: Unknown') }}</td>
             <td class="px-5 py-3">{{ patient.gender }}</td>
             <td class="px-5 py-3">{{ patient.blood_group or '-' }}</td>
           </tr>

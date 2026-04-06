@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 
 from medicore.db.connection import get_db_cursor
 from medicore.security.rbac import login_required, role_required
@@ -15,6 +17,10 @@ appointments_bp = Blueprint("appointments", __name__, url_prefix="/appointments"
 STATUS_OPTIONS = ["Scheduled", "Checked-In", "Completed", "Cancelled"]
 RECEPTION_ROLES = ["Receptionist", "Admin", "SuperAdmin"]
 DOCTOR_ROLES = ["Doctor", "SuperAdmin"]
+PAYMENT_METHODS = ["Cash", "Card"]
+PHONE_PATTERN = re.compile(r"^\d{10}$")
+NAME_PATTERN = re.compile(r"^[A-Za-z ]{2,}$")
+NIC_PATTERN = re.compile(r"^(\d{9}[VvXx]|\d{12})$")
 
 
 def _today_colombo() -> date:
@@ -42,14 +48,16 @@ def _format_time(value) -> str:
 
 def _load_doctors() -> list[dict]:
     query = """
-        SELECT u.id, COALESCE(u.full_name, u.username) AS doctor_name
-        FROM users u
-        INNER JOIN roles r ON r.id = u.role_id
-        WHERE r.role_name = %s AND u.is_active = 1
-        ORDER BY doctor_name
+        SELECT doctor_id AS id,
+               doctor_name,
+               doctor_fee,
+               hospital_fee
+        FROM doctors
+        WHERE is_active = 1
+        ORDER BY doctor_name ASC
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
-        cursor.execute(query, ("Doctor",))
+        cursor.execute(query)
         return cursor.fetchall() or []
 
 
@@ -77,6 +85,217 @@ def _build_time_slots(start_hour: int = 8, end_hour: int = 17, interval_minutes:
     return slots
 
 
+def _normalize_spaces(value: str) -> str:
+    return " ".join((value or "").strip().split())
+
+
+def _split_patient_name(full_name: str) -> tuple[str, str]:
+    parts = _normalize_spaces(full_name).split(" ")
+    if len(parts) == 1:
+        return parts[0], parts[0]
+    return parts[0], " ".join(parts[1:])
+
+
+def _parse_money(value: str | None, default: str = "0.00") -> Decimal:
+    try:
+        return Decimal(value or default).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal(default).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _derive_birth_year_from_age(age: int) -> int:
+    return _today_colombo().year - age
+
+
+def _format_token_for_display(value: int | None) -> str:
+    if value is None:
+        return "Not started"
+    return f"{int(value):02d}"
+
+
+def _calculate_age(dob, birth_year) -> int | None:
+    if dob:
+        today = _today_colombo()
+        return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    if birth_year:
+        return max(0, _today_colombo().year - int(birth_year))
+    return None
+
+
+def _patients_has_column(column_name: str) -> bool:
+    query = """
+        SELECT COUNT(*) AS total
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'patients'
+          AND column_name = %s
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query, (column_name,))
+        row = cursor.fetchone() or {}
+    return int(row.get("total", 0)) > 0
+
+
+def _appointments_has_column(column_name: str) -> bool:
+    query = """
+        SELECT COUNT(*) AS total
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = 'appointments'
+          AND column_name = %s
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query, (column_name,))
+        row = cursor.fetchone() or {}
+    return int(row.get("total", 0)) > 0
+
+
+def _generate_patient_number(cursor) -> str:
+    query = """
+        SELECT MAX(CAST(SUBSTRING(patient_number, 5) AS UNSIGNED)) AS max_num
+        FROM patients
+        WHERE patient_number LIKE 'PAT-%'
+    """
+    cursor.execute(query)
+    row = cursor.fetchone() or {}
+    max_num = row.get("max_num")
+    next_num = 1001 if not max_num else int(max_num) + 1
+    return f"PAT-{next_num:04d}"
+
+
+def _generate_invoice_number(cursor) -> str:
+    year_suffix = datetime.now(ZoneInfo("Asia/Colombo")).strftime("%y")
+    prefix = f"INV-{year_suffix}-"
+    cursor.execute("SELECT COUNT(*) AS total FROM invoices WHERE invoice_number LIKE %s", (f"{prefix}%",))
+    row = cursor.fetchone() or {}
+    sequence = int(row.get("total", 0)) + 1
+    return f"{prefix}{sequence:04d}"
+
+
+def _load_doctor_channeling_meta(doctor_id: int, booking_date: date) -> dict:
+    ongoing_query = """
+        SELECT queue_number
+        FROM physical_queues
+        WHERE doctor_id = %s
+          AND queue_date = %s
+          AND status = 'In Consultation'
+        ORDER BY queue_number DESC
+        LIMIT 1
+    """
+    has_token_number = _appointments_has_column("token_number")
+    paid_token_query = """
+        SELECT COALESCE(MAX(a.token_number), 0) AS max_token
+        FROM appointments a
+        INNER JOIN invoices i ON i.appointment_id = a.appointment_id
+        WHERE a.doctor_id = %s
+          AND a.appointment_date = %s
+          AND a.status != 'Cancelled'
+          AND i.status = 'Paid'
+          AND a.token_number IS NOT NULL
+    """
+    fallback_token_query = """
+        SELECT COALESCE(MAX(queue_number), 0) AS max_queue
+        FROM physical_queues
+        WHERE doctor_id = %s
+          AND queue_date = %s
+    """
+    fee_query = """
+        SELECT doctor_fee, hospital_fee
+        FROM doctors
+        WHERE doctor_id = %s
+          AND is_active = 1
+        LIMIT 1
+    """
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(ongoing_query, (doctor_id, booking_date))
+        ongoing = cursor.fetchone()
+        max_paid_token = 0
+        if has_token_number:
+            cursor.execute(paid_token_query, (doctor_id, booking_date))
+            paid_row = cursor.fetchone() or {}
+            max_paid_token = int(paid_row.get("max_token") or 0)
+
+        cursor.execute(fallback_token_query, (doctor_id, booking_date))
+        max_queue = cursor.fetchone() or {}
+        cursor.execute(fee_query, (doctor_id,))
+        fee_row = cursor.fetchone() or {}
+
+    ongoing_token = ongoing.get("queue_number") if ongoing else None
+    fallback_max = int(max_queue.get("max_queue") or 0)
+    next_token = (max(max_paid_token, fallback_max) if has_token_number else fallback_max) + 1
+
+    doctor_fee = Decimal(str(fee_row.get("doctor_fee") or "0.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    hospital_fee = Decimal(str(fee_row.get("hospital_fee") or "0.00")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    total = (doctor_fee + hospital_fee).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    return {
+        "ongoing_token": _format_token_for_display(ongoing_token),
+        "next_token": _format_token_for_display(next_token),
+        "doctor_fee": f"{doctor_fee:.2f}",
+        "hospital_fee": f"{hospital_fee:.2f}",
+        "total_amount": f"{total:.2f}",
+    }
+
+
+@appointments_bp.get("/api/doctors")
+@login_required
+def doctors_api():
+    active_only = (request.args.get("active") or "").lower() == "true"
+    doctors = _load_doctors()
+    if not active_only:
+        query = """
+            SELECT doctor_id AS id, doctor_name, doctor_fee, hospital_fee, is_active
+            FROM doctors
+            ORDER BY doctor_name ASC
+        """
+        with get_db_cursor(dictionary=True) as (_conn, cursor):
+            cursor.execute(query)
+            doctors = cursor.fetchall() or []
+    return jsonify({"ok": True, "doctors": doctors})
+
+
+def _patient_lookup_by_phone(phone_digits: str) -> list[dict]:
+    has_birth_year = _patients_has_column("birth_year")
+    birth_year_select = "birth_year" if has_birth_year else "NULL AS birth_year"
+    has_patient_number = _patients_has_column("patient_number")
+    display_id = "patient_number" if has_patient_number else "patient_id"
+
+    query = f"""
+        SELECT patient_id,
+               {display_id} AS display_patient_id,
+               first_name,
+               last_name,
+               nic_number,
+               gender,
+               date_of_birth,
+               {birth_year_select}
+        FROM patients
+        WHERE phone_number LIKE %s
+        ORDER BY first_name ASC, last_name ASC, patient_id ASC
+    """
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query, (f"%{phone_digits}%",))
+        rows = cursor.fetchall() or []
+
+    payload = []
+    for row in rows:
+        full_name = f"{(row.get('first_name') or '').strip()} {(row.get('last_name') or '').strip()}".strip()
+        payload.append(
+            {
+                "patient_id": row.get("patient_id"),
+                "display_patient_id": row.get("display_patient_id") or row.get("patient_id"),
+                "patient_name": full_name,
+                "nic": row.get("nic_number") or "",
+                "gender": row.get("gender") or "",
+                "age": _calculate_age(row.get("date_of_birth"), row.get("birth_year")),
+            }
+        )
+
+    return payload
+
+
 @appointments_bp.get("")
 @login_required
 @role_required(RECEPTION_ROLES)
@@ -88,11 +307,12 @@ def appointments_dashboard():
      SELECT a.appointment_id, a.patient_id, a.doctor_id, a.appointment_date,
          a.appointment_time, a.status, a.reason_for_visit,
          a.appointment_mode, a.telehealth_link,
-               CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
-               COALESCE(u.full_name, u.username) AS doctor_name
+         CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+         COALESCE(d.doctor_name, u.full_name, u.username) AS doctor_name
         FROM appointments a
         INNER JOIN patients p ON p.patient_id = a.patient_id
-        INNER JOIN users u ON u.id = a.doctor_id
+     LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
+     LEFT JOIN users u ON u.user_id = a.doctor_id
         WHERE a.appointment_date = %s
     """
     params = [selected_date]
@@ -143,11 +363,12 @@ def doctor_schedule():
     query = """
         SELECT a.appointment_id, a.patient_id, a.doctor_id, a.appointment_date,
                a.appointment_time, a.status, a.reason_for_visit,
-               CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
-               COALESCE(u.full_name, u.username) AS doctor_name
+         CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+         COALESCE(d.doctor_name, u.full_name, u.username) AS doctor_name
         FROM appointments a
         INNER JOIN patients p ON p.patient_id = a.patient_id
-        INNER JOIN users u ON u.id = a.doctor_id
+     LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
+     LEFT JOIN users u ON u.user_id = a.doctor_id
         WHERE a.doctor_id = %s
           AND a.appointment_date BETWEEN %s AND %s
         ORDER BY a.appointment_date ASC, a.appointment_time ASC
@@ -184,20 +405,8 @@ def doctor_schedule():
 @role_required(RECEPTION_ROLES)
 def appointment_book_form():
     selected_date = _parse_date(request.args.get("date")) or _today_colombo()
-    return render_template(
-        "appointments/appointment_book.html",
-        title="Book Appointment",
-        active_page="appointments",
-        current_user={
-            "username": session.get("username", "User"),
-            "role": session.get("role", ""),
-        },
-        patients=_load_patients(),
-        doctors=_load_doctors(),
-        time_slots=_build_time_slots(),
-        selected_date=selected_date.isoformat(),
-        csrf_token=generate_csrf_token(),
-    )
+    flash("Use Reception / Channeling Desk for complete booking + billing + token flow.", "info")
+    return redirect(url_for("appointments.channeling_desk", date=selected_date.isoformat()))
 
 
 @appointments_bp.post("/book")
@@ -291,3 +500,429 @@ def appointment_update_status(appointment_id: int):
 
     flash("Appointment status updated.", "success")
     return redirect(url_for("appointments.appointments_dashboard"))
+
+
+@appointments_bp.get("/reception-desk")
+@login_required
+@role_required(RECEPTION_ROLES)
+def reception_desk():
+    """Modern HIMS-style reception desk with dynamic services."""
+    return render_template(
+        "appointments/reception_desk_v2.html",
+        title="Reception Desk - Service Booking",
+        active_page="appointments",
+        current_user={
+            "username": session.get("username", "User"),
+            "role": session.get("role", ""),
+        },
+        csrf_token=generate_csrf_token(),
+    )
+
+
+@appointments_bp.get("/channeling-desk")
+@login_required
+@role_required(RECEPTION_ROLES)
+def channeling_desk():
+    selected_date = _parse_date(request.args.get("date")) or _today_colombo()
+    selected_doctor = request.args.get("doctor_id", "")
+    doctors = _load_doctors()
+    summary = session.pop("last_channeling_summary", None)
+
+    return render_template(
+        "appointments/channeling_desk.html",
+        title="Reception Channeling Desk",
+        active_page="appointments",
+        current_user={
+            "username": session.get("username", "User"),
+            "role": session.get("role", ""),
+        },
+        doctors=doctors,
+        selected_date=selected_date.isoformat(),
+        selected_doctor=str(selected_doctor),
+        payment_methods=PAYMENT_METHODS,
+        csrf_token=generate_csrf_token(),
+        summary=summary,
+    )
+
+
+@appointments_bp.get("/channeling-desk/patient-lookup")
+@login_required
+@role_required(RECEPTION_ROLES)
+def channeling_patient_lookup():
+    phone = (request.args.get("phone") or "").strip()
+    if not PHONE_PATTERN.match(phone):
+        return jsonify({"ok": True, "patients": []})
+    return jsonify({"ok": True, "patients": _patient_lookup_by_phone(phone)})
+
+
+@appointments_bp.get("/channeling-desk/doctor-meta")
+@login_required
+@role_required(RECEPTION_ROLES)
+def channeling_doctor_meta():
+    doctor_id_raw = (request.args.get("doctor_id") or "").strip()
+    booking_date = _parse_date(request.args.get("date"))
+
+    if not doctor_id_raw.isdigit() or not booking_date:
+        return jsonify({"ok": False, "message": "Doctor and date are required."}), 400
+
+    payload = _load_doctor_channeling_meta(int(doctor_id_raw), booking_date)
+    payload["ok"] = True
+    return jsonify(payload)
+
+
+@appointments_bp.post("/channeling-desk/confirm")
+@login_required
+@role_required(RECEPTION_ROLES)
+def channeling_confirm():
+    if not validate_csrf_token():
+        flash("Invalid request token. Please retry.", "error")
+        return redirect(url_for("appointments.channeling_desk"))
+
+    existing_patient_id_raw = (request.form.get("existing_patient_id") or "").strip()
+    phone_number = (request.form.get("phone_number") or "").strip()
+    patient_name = _normalize_spaces(request.form.get("patient_name") or "")
+    age_raw = (request.form.get("age") or "").strip()
+    gender = (request.form.get("gender") or "").strip()
+    nic = (request.form.get("nic") or "").strip()
+
+    doctor_id_raw = (request.form.get("doctor_id") or "").strip()
+    appointment_date_raw = (request.form.get("appointment_date") or "").strip()
+    fixed_appointment_time = time(hour=0, minute=0)
+    reason_for_visit = "Channeling"
+
+    payment_method = (request.form.get("payment_method") or "").strip()
+    doctor_fee = _parse_money(request.form.get("doctor_fee"), "0.00")
+    hospital_fee = _parse_money(request.form.get("hospital_fee"), "0.00")
+    amount_received = _parse_money(request.form.get("amount_received"), "0.00")
+    total_amount = (doctor_fee + hospital_fee).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    errors: list[str] = []
+
+    if not PHONE_PATTERN.match(phone_number):
+        errors.append("Phone number must be exactly 10 digits.")
+
+    if existing_patient_id_raw and not existing_patient_id_raw.isdigit():
+        errors.append("Invalid selected patient.")
+
+    if not existing_patient_id_raw:
+        if not NAME_PATTERN.match(patient_name):
+            errors.append("Patient name must be at least 2 letters and contain only letters/spaces.")
+        if not age_raw.isdigit() or not (0 <= int(age_raw) <= 120):
+            errors.append("Age must be between 0 and 120.")
+        if gender not in {"Male", "Female", "Other"}:
+            errors.append("Please select a valid gender.")
+        if nic and not NIC_PATTERN.match(nic):
+            errors.append("NIC must be 9 digits + V/X or 12 digits.")
+
+    if not doctor_id_raw.isdigit():
+        errors.append("Doctor is required.")
+
+    appointment_date = _parse_date(appointment_date_raw)
+    if not appointment_date:
+        errors.append("Valid appointment date is required.")
+
+    if payment_method not in PAYMENT_METHODS:
+        errors.append("Payment method must be Cash or Card.")
+
+    if doctor_fee < 0 or hospital_fee < 0:
+        errors.append("Fees cannot be negative.")
+
+    if amount_received < total_amount:
+        errors.append("Payment must be completed before generating token.")
+
+    if errors:
+        for err in errors:
+            flash(err, "error")
+        return redirect(url_for("appointments.channeling_desk", date=appointment_date_raw, doctor_id=doctor_id_raw))
+
+    doctor_id = int(doctor_id_raw)
+    has_patient_number = _patients_has_column("patient_number")
+    has_birth_year = _patients_has_column("birth_year")
+    has_token_number = _appointments_has_column("token_number")
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        if existing_patient_id_raw:
+            patient_id = int(existing_patient_id_raw)
+            cursor.execute(
+                "SELECT patient_id, first_name, last_name FROM patients WHERE patient_id = %s LIMIT 1",
+                (patient_id,),
+            )
+            patient_row = cursor.fetchone()
+            if not patient_row:
+                flash("Selected patient was not found.", "error")
+                return redirect(url_for("appointments.channeling_desk", date=appointment_date_raw, doctor_id=doctor_id_raw))
+            display_name = f"{(patient_row.get('first_name') or '').strip()} {(patient_row.get('last_name') or '').strip()}".strip()
+            patient_identifier = patient_id
+        else:
+            first_name, last_name = _split_patient_name(patient_name)
+            if last_name == first_name:
+                last_name = ""
+
+            patient_columns = ["first_name", "last_name", "phone_number", "gender", "nic_number", "created_at"]
+            patient_values: list = [first_name, last_name, phone_number, gender, nic or None, datetime.now(ZoneInfo("Asia/Colombo"))]
+
+            if has_patient_number:
+                patient_columns.insert(0, "patient_number")
+                patient_values.insert(0, _generate_patient_number(cursor))
+
+            if has_birth_year:
+                patient_columns.extend(["birth_year", "date_of_birth"])
+                patient_values.extend([_derive_birth_year_from_age(int(age_raw)), None])
+            else:
+                approx_birth_date = date(_derive_birth_year_from_age(int(age_raw)), 1, 1)
+                patient_columns.append("date_of_birth")
+                patient_values.append(approx_birth_date)
+
+            placeholders = ", ".join(["%s"] * len(patient_columns))
+            insert_patient = f"INSERT INTO patients ({', '.join(patient_columns)}) VALUES ({placeholders})"
+            cursor.execute(insert_patient, tuple(patient_values))
+            patient_id = cursor.lastrowid
+            display_name = patient_name
+            patient_identifier = patient_id
+
+        appointment_insert_columns = [
+            "patient_id",
+            "doctor_id",
+            "appointment_date",
+            "appointment_time",
+            "status",
+            "reason_for_visit",
+            "created_at",
+        ]
+        appointment_insert_values: list = [
+            patient_id,
+            doctor_id,
+            appointment_date,
+            fixed_appointment_time,
+            "Scheduled",
+            reason_for_visit,
+            datetime.now(ZoneInfo("Asia/Colombo")),
+        ]
+        if has_token_number:
+            appointment_insert_columns.append("token_number")
+            appointment_insert_values.append(None)
+
+        appointment_placeholder = ", ".join(["%s"] * len(appointment_insert_columns))
+        cursor.execute(
+            f"INSERT INTO appointments ({', '.join(appointment_insert_columns)}) VALUES ({appointment_placeholder})",
+            tuple(appointment_insert_values),
+        )
+        appointment_id = cursor.lastrowid
+
+        invoice_number = _generate_invoice_number(cursor)
+        cursor.execute(
+            """
+            INSERT INTO invoices (
+                invoice_number, patient_id, appointment_id, invoice_date,
+                subtotal, discount, tax_amount, total_amount,
+                paid_amount, due_amount, status, payment_status, created_at
+            ) VALUES (%s, %s, %s, CURDATE(), %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            """,
+            (
+                invoice_number,
+                patient_id,
+                appointment_id,
+                total_amount,
+                Decimal("0.00"),
+                Decimal("0.00"),
+                total_amount,
+                amount_received,
+                Decimal("0.00"),
+                "Paid",
+                "Paid",
+            ),
+        )
+        invoice_id = cursor.lastrowid
+
+        cursor.execute(
+            """
+            INSERT INTO invoice_items (
+                invoice_id, item_type, reference_id, description,
+                quantity, unit_price, total_price, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            """,
+            (
+                invoice_id,
+                "Service",
+                appointment_id,
+                "Doctor Channeling Fee",
+                1,
+                doctor_fee,
+                doctor_fee,
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO invoice_items (
+                invoice_id, item_type, reference_id, description,
+                quantity, unit_price, total_price, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            """,
+            (
+                invoice_id,
+                "Service",
+                appointment_id,
+                "Hospital Channeling Fee",
+                1,
+                hospital_fee,
+                hospital_fee,
+            ),
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO payments (
+                invoice_id, payment_date, payment_method,
+                amount_paid, reference_number, notes, created_at
+            ) VALUES (%s, NOW(), %s, %s, %s, %s, NOW())
+            """,
+            (
+                invoice_id,
+                payment_method,
+                total_amount,
+                f"CH-{appointment_id}",
+                "Paid at reception channeling desk",
+            ),
+        )
+
+        max_paid_token = 0
+        if has_token_number:
+            cursor.execute(
+                """
+                SELECT COALESCE(MAX(a.token_number), 0) AS max_token
+                FROM appointments a
+                INNER JOIN invoices i ON i.appointment_id = a.appointment_id
+                WHERE a.doctor_id = %s
+                  AND a.appointment_date = %s
+                  AND a.status != 'Cancelled'
+                  AND i.payment_status = 'Paid'
+                  AND a.token_number IS NOT NULL
+                FOR UPDATE
+                """,
+                (doctor_id, appointment_date),
+            )
+            paid_row = cursor.fetchone() or {}
+            max_paid_token = int(paid_row.get("max_token") or 0)
+
+        cursor.execute(
+            """
+            SELECT COALESCE(MAX(queue_number), 0) AS max_queue
+            FROM physical_queues
+            WHERE doctor_id = %s
+              AND queue_date = %s
+            FOR UPDATE
+            """,
+            (doctor_id, appointment_date),
+        )
+        max_queue = cursor.fetchone() or {}
+        fallback_max = int(max_queue.get("max_queue", 0))
+        token_number = (max(max_paid_token, fallback_max) if has_token_number else fallback_max) + 1
+
+        cursor.execute(
+            """
+            INSERT INTO physical_queues (
+                patient_id, doctor_id, queue_date, queue_number,
+                status, checked_in_time, notes
+            ) VALUES (%s, %s, %s, %s, %s, NOW(), %s)
+            """,
+            (
+                patient_id,
+                doctor_id,
+                appointment_date,
+                token_number,
+                "Waiting",
+                f"Auto-created from channeling desk. Appointment #{appointment_id}",
+            ),
+        )
+
+        if has_token_number:
+            cursor.execute(
+                "UPDATE appointments SET token_number = %s WHERE appointment_id = %s",
+                (token_number, appointment_id),
+            )
+
+        cursor.execute(
+            """
+            SELECT COALESCE(d.doctor_name, u.full_name, u.username) AS doctor_name
+            FROM doctors d
+            LEFT JOIN users u ON u.user_id = d.doctor_id
+            WHERE d.doctor_id = %s
+            LIMIT 1
+            """,
+            (doctor_id,),
+        )
+        doctor_row = cursor.fetchone() or {}
+
+    session["last_channeling_summary"] = {
+        "patient_name": display_name,
+        "patient_identifier": patient_identifier,
+        "doctor_name": doctor_row.get("doctor_name") or "Doctor",
+        "appointment_date": appointment_date.isoformat(),
+        "token_number": _format_token_for_display(token_number),
+        "invoice_number": invoice_number,
+        "doctor_fee": f"{doctor_fee:.2f}",
+        "hospital_fee": f"{hospital_fee:.2f}",
+        "total_amount": f"{total_amount:.2f}",
+        "amount_paid": f"{amount_received:.2f}",
+        "balance": f"{(amount_received - total_amount):.2f}",
+        "payment_method": payment_method,
+    }
+
+    flash(f"Payment completed. Token #{_format_token_for_display(token_number)} generated.", "success")
+    return redirect(url_for("appointments.channeling_desk", date=appointment_date.isoformat(), doctor_id=doctor_id))
+
+
+# ======================== RECEPTION DESK - DYNAMIC SERVICES API ========================
+
+
+@appointments_bp.get("/api/services/categories")
+@login_required
+@role_required(RECEPTION_ROLES)
+def api_get_service_categories():
+    """API endpoint to fetch all active service categories for the reception desk."""
+    query = """
+        SELECT category_id, category_name, icon_class, display_order
+        FROM service_categories
+        WHERE is_active = TRUE
+        ORDER BY display_order ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query)
+        categories = cursor.fetchall() or []
+    return jsonify({"categories": categories})
+
+
+@appointments_bp.get("/api/services/items/<int:category_id>")
+@login_required
+@role_required(RECEPTION_ROLES)
+def api_get_service_items(category_id: int):
+    """API endpoint to fetch all active service items for a given category."""
+    query = """
+        SELECT item_id, item_code, item_name, price, description
+        FROM service_items
+        WHERE category_id = %s AND is_active = TRUE
+        ORDER BY display_order ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query, (category_id,))
+        items = cursor.fetchall() or []
+    return jsonify({"items": items})
+
+
+@appointments_bp.get("/api/services/all")
+@login_required
+@role_required(RECEPTION_ROLES)
+def api_get_all_service_items():
+    """API endpoint to fetch all active service items from all categories."""
+    query = """
+        SELECT si.item_id, si.item_code, si.item_name, si.price, si.description,
+               sc.category_name, sc.category_id
+        FROM service_items si
+        JOIN service_categories sc ON si.category_id = sc.category_id
+        WHERE si.is_active = TRUE AND sc.is_active = TRUE
+        ORDER BY sc.display_order ASC, si.display_order ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query)
+        items = cursor.fetchall() or []
+    return jsonify({"items": items})

@@ -1,0 +1,540 @@
+{% extends 'base.html' %}
+
+{% block title %}MediCore | Reception Channeling Desk{% endblock %}
+{% block header_title %}Reception / Channeling Desk{% endblock %}
+
+{% block content %}
+<style>
+  .desk-shell {
+    height: calc(100vh - 140px);
+    min-height: 520px;
+  }
+  .desk-card {
+    padding: 16px;
+    border-radius: 14px;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  }
+  .desk-grid {
+    display: grid;
+    gap: 12px;
+  }
+  .desk-row {
+    display: grid;
+    gap: 12px;
+  }
+  .desk-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+  }
+  .desk-input,
+  .desk-select {
+    height: 40px;
+    border-radius: 10px;
+  }
+  .desk-badge {
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .desk-status {
+    height: 40px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  @media (min-width: 1024px) {
+    .row-patient {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .row-doctor {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .row-payment-1 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .row-payment-2 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 768px) and (max-width: 1023px) {
+    .row-patient,
+    .row-payment-1 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .row-doctor,
+    .row-payment-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 767px) {
+    .row-patient,
+    .row-doctor,
+    .row-payment-1,
+    .row-payment-2 {
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
+  }
+</style>
+
+<div class="max-w-6xl mx-auto desk-shell">
+  {% if summary %}
+    <section class="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p class="text-sm font-semibold text-emerald-800">Token {{ summary.token_number }} • {{ summary.doctor_name }}</p>
+          <p class="text-xs text-emerald-700">{{ summary.patient_name }} • {{ summary.appointment_date }} • Invoice {{ summary.invoice_number }}</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs text-emerald-700">
+          <span>LKR {{ summary.total_amount }}</span>
+          <button type="button" onclick="window.print()" class="rounded-lg border border-emerald-300 bg-white px-3 py-1 text-xs font-medium text-emerald-700">Print</button>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  <form id="channeling-desk-form" method="post" action="{{ url_for('appointments.channeling_confirm') }}" class="desk-card bg-white border border-slate-200 desk-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="existing_patient_id" id="existing_patient_id" value="" />
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-900">Patient</h3>
+      <div id="lookup-status" class="text-xs text-slate-500">Auto search by phone</div>
+    </div>
+
+    <div class="desk-row row-patient">
+      <div>
+        <label for="phone_number" class="desk-label">Phone</label>
+        <input id="phone_number" name="phone_number" type="text" maxlength="10" inputmode="numeric" autocomplete="off" required
+               class="desk-input mt-1 w-full rounded-lg border-2 border-med-500 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-med-200"
+               placeholder="07XXXXXXXX" />
+        <p id="phone-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+        <div id="patient-select-wrapper" class="mt-2 hidden">
+          <select id="patient_lookup_select" class="desk-select w-full rounded-lg border border-slate-300 px-3 text-sm">
+            <option value="">Select Existing Patient</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label for="nic" class="desk-label">NIC</label>
+        <input id="nic" name="nic" type="text" maxlength="12" class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm uppercase"
+               placeholder="Optional" />
+        <p id="nic-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+      </div>
+      <div>
+        <label for="patient_name" class="desk-label">Patient Name</label>
+        <input id="patient_name" name="patient_name" type="text" maxlength="100" required
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm"
+               placeholder="Full name" />
+        <p id="name-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+      </div>
+      <div>
+        <label for="age" class="desk-label">Age</label>
+        <input id="age" name="age" type="text" maxlength="3" inputmode="numeric" required
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm"
+               placeholder="0-120" />
+        <p id="age-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+      </div>
+      <div>
+        <label for="gender" class="desk-label">Gender</label>
+        <select id="gender" name="gender" required class="desk-select mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm">
+          <option value="">Select</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+          <option value="Other">Other</option>
+        </select>
+        <p id="gender-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-900">Doctor & Queue</h3>
+    </div>
+
+    <div class="desk-row row-doctor">
+      <div>
+        <label for="doctor_id" class="desk-label">Doctor</label>
+        <select id="doctor_id" name="doctor_id" required class="desk-select mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm">
+          <option value="">Select doctor</option>
+          {% for doctor in doctors %}
+            <option value="{{ doctor.id }}" {% if selected_doctor and selected_doctor == doctor.id|string %}selected{% endif %}>{{ doctor.doctor_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="appointment_date" class="desk-label">Date</label>
+        <input id="appointment_date" name="appointment_date" type="date" value="{{ selected_date }}" required
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm" />
+      </div>
+      <div>
+        <label class="desk-label">Current Token</label>
+        <div id="ongoing-token" class="desk-badge mt-1 border border-amber-200 bg-amber-50 text-amber-700">Not started</div>
+      </div>
+      <div>
+        <label class="desk-label">Next Token</label>
+        <div id="next-token" class="desk-badge mt-1 border border-sky-200 bg-sky-50 text-sky-700">01</div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-slate-900">Payment</h3>
+    </div>
+
+    <div class="desk-row row-payment-1">
+      <div>
+        <label for="doctor_fee" class="desk-label">Doctor Fee</label>
+        <input id="doctor_fee" name="doctor_fee" type="text" readonly value="2000.00"
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm bg-slate-50" />
+      </div>
+      <div>
+        <label for="hospital_fee" class="desk-label">Hospital Fee</label>
+        <input id="hospital_fee" name="hospital_fee" type="text" readonly value="500.00"
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm bg-slate-50" />
+      </div>
+      <div>
+        <label for="total_amount" class="desk-label">Total</label>
+        <input id="total_amount" type="text" readonly value="2500.00"
+               class="desk-input mt-1 w-full rounded-lg border border-emerald-200 px-3 text-sm font-semibold bg-emerald-50 text-emerald-800" />
+      </div>
+      <div>
+        <label for="payment_method" class="desk-label">Payment Method</label>
+        <select id="payment_method" name="payment_method" required class="desk-select mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm">
+          <option value="">Select</option>
+          {% for method in payment_methods %}
+            <option value="{{ method }}">{{ method }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="desk-row row-payment-2">
+      <div>
+        <label for="amount_received" class="desk-label">Amount Received</label>
+        <input id="amount_received" name="amount_received" type="text" inputmode="decimal" required
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm"
+               placeholder="Paid amount" />
+        <p id="amount-error" class="mt-1 text-xs text-rose-600 hidden"></p>
+      </div>
+      <div>
+        <label for="balance_amount" class="desk-label">Balance</label>
+        <input id="balance_amount" type="text" readonly value="-2500.00"
+               class="desk-input mt-1 w-full rounded-lg border border-slate-300 px-3 text-sm bg-slate-50" />
+      </div>
+      <div>
+        <label for="payment_status" class="desk-label">Payment Status</label>
+        <div id="payment_status" class="desk-status mt-1 border border-amber-300 bg-amber-50 text-amber-800">Pending</div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-1">
+      <a href="{{ url_for('appointments.appointments_dashboard') }}" class="text-sm text-slate-600 hover:text-slate-900">Cancel</a>
+      <button type="submit" class="rounded-lg bg-med-600 text-white px-5 py-2 text-sm hover:bg-med-700">Confirm Booking & Payment</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (() => {
+    const form = document.getElementById('channeling-desk-form');
+    const statusBox = document.getElementById('lookup-status');
+    const phoneInput = document.getElementById('phone_number');
+    const patientSelectWrapper = document.getElementById('patient-select-wrapper');
+    const patientLookupSelect = document.getElementById('patient_lookup_select');
+    const existingPatientInput = document.getElementById('existing_patient_id');
+
+    const nameInput = document.getElementById('patient_name');
+    const ageInput = document.getElementById('age');
+    const genderInput = document.getElementById('gender');
+    const nicInput = document.getElementById('nic');
+
+    const doctorInput = document.getElementById('doctor_id');
+    const dateInput = document.getElementById('appointment_date');
+    const ongoingTokenEl = document.getElementById('ongoing-token');
+    const nextTokenEl = document.getElementById('next-token');
+
+    const doctorFeeInput = document.getElementById('doctor_fee');
+    const hospitalFeeInput = document.getElementById('hospital_fee');
+    const totalAmountInput = document.getElementById('total_amount');
+    const amountReceivedInput = document.getElementById('amount_received');
+  const balanceAmountInput = document.getElementById('balance_amount');
+  const paymentStatusInput = document.getElementById('payment_status');
+
+    const phoneError = document.getElementById('phone-error');
+    const nameError = document.getElementById('name-error');
+    const ageError = document.getElementById('age-error');
+    const genderError = document.getElementById('gender-error');
+    const nicError = document.getElementById('nic-error');
+    const amountError = document.getElementById('amount-error');
+
+    let lookupDebounce;
+
+    const setStatus = (text, tone = 'neutral') => {
+      statusBox.textContent = text;
+      statusBox.className = 'mt-3 rounded-lg border px-3 py-2 text-sm';
+      if (tone === 'success') {
+        statusBox.classList.add('bg-emerald-50', 'border-emerald-200', 'text-emerald-700');
+      } else if (tone === 'warning') {
+        statusBox.classList.add('bg-amber-50', 'border-amber-200', 'text-amber-800');
+      } else if (tone === 'info') {
+        statusBox.classList.add('bg-sky-50', 'border-sky-200', 'text-sky-700');
+      } else {
+        statusBox.classList.add('bg-slate-50', 'border-slate-200', 'text-slate-600');
+      }
+    };
+
+    const clearFieldErrors = () => {
+      [phoneError, nameError, ageError, genderError, nicError, amountError].forEach((el) => {
+        el.classList.add('hidden');
+        el.textContent = '';
+      });
+    };
+
+    const showError = (el, message) => {
+      el.textContent = message;
+      el.classList.remove('hidden');
+    };
+
+    const resetPatientSelect = () => {
+      patientLookupSelect.innerHTML = '<option value="">Select Existing Patient</option>';
+      patientLookupSelect.value = '';
+      patientSelectWrapper.classList.add('hidden');
+      existingPatientInput.value = '';
+    };
+
+    const clearPatientFields = () => {
+      existingPatientInput.value = '';
+      nameInput.value = '';
+      ageInput.value = '';
+      genderInput.value = '';
+      nicInput.value = '';
+    };
+
+    const fillPatient = (patient) => {
+      existingPatientInput.value = String(patient.patient_id || '');
+      nameInput.value = patient.patient_name || '';
+      ageInput.value = patient.age !== null && patient.age !== undefined ? String(patient.age) : '';
+      genderInput.value = patient.gender || '';
+      nicInput.value = patient.nic || '';
+    };
+
+    const updateTotals = () => {
+      const doctorFee = Number.parseFloat(doctorFeeInput.value || '0') || 0;
+      const hospitalFee = Number.parseFloat(hospitalFeeInput.value || '0') || 0;
+      totalAmountInput.value = (doctorFee + hospitalFee).toFixed(2);
+      updatePaymentPreview();
+    };
+
+    const updatePaymentPreview = () => {
+      const total = Number.parseFloat(totalAmountInput.value || '0') || 0;
+      const amount = Number.parseFloat(amountReceivedInput.value || '0') || 0;
+      const balance = (amount - total).toFixed(2);
+      balanceAmountInput.value = balance;
+
+      if (amount <= 0) {
+        paymentStatusInput.value = 'Pending';
+        paymentStatusInput.className = 'mt-1 w-full rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold bg-amber-50 text-amber-800';
+      } else if (amount < total) {
+        paymentStatusInput.value = 'Insufficient';
+        paymentStatusInput.className = 'mt-1 w-full rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold bg-rose-50 text-rose-700';
+      } else {
+        paymentStatusInput.value = 'Paid';
+        paymentStatusInput.className = 'mt-1 w-full rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold bg-emerald-50 text-emerald-700';
+      }
+    };
+
+    const formatTokenDisplay = (value, fallback = 'Not started') => {
+      if (value === null || value === undefined || value === '') {
+        return fallback;
+      }
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isNaN(parsed)) {
+        return String(value);
+      }
+      return String(parsed).padStart(2, '0');
+    };
+
+    const loadDoctorMeta = async () => {
+      const doctorId = doctorInput.value;
+      const dateVal = dateInput.value;
+
+      if (!doctorId || !dateVal) {
+        ongoingTokenEl.textContent = 'Not started';
+        nextTokenEl.textContent = '01';
+        return;
+      }
+
+      try {
+        const response = await fetch(`{{ url_for('appointments.channeling_doctor_meta') }}?doctor_id=${encodeURIComponent(doctorId)}&date=${encodeURIComponent(dateVal)}`);
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.message || 'Unable to load doctor details');
+        }
+
+        ongoingTokenEl.textContent = formatTokenDisplay(payload.ongoing_token, 'Not started');
+        nextTokenEl.textContent = formatTokenDisplay(payload.next_token, '01');
+        doctorFeeInput.value = payload.doctor_fee || '0.00';
+        hospitalFeeInput.value = payload.hospital_fee || '0.00';
+        updateTotals();
+      } catch (_err) {
+        ongoingTokenEl.textContent = 'Not started';
+        nextTokenEl.textContent = '01';
+      }
+    };
+
+    const runLookup = async () => {
+      const digits = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+      phoneInput.value = digits;
+      clearFieldErrors();
+      clearPatientFields();
+      resetPatientSelect();
+
+      if (digits.length < 3) {
+        setStatus('Enter at least 3 digits to search.', 'neutral');
+        return;
+      }
+
+      setStatus('Searching patients...', 'info');
+      try {
+        const response = await fetch(`{{ url_for('appointments.channeling_patient_lookup') }}?phone=${encodeURIComponent(digits)}`);
+        const payload = await response.json();
+        const patients = payload.patients || [];
+
+        if (!patients.length) {
+          setStatus('No existing patient found. Continue as new patient.', 'neutral');
+          return;
+        }
+
+        patients.forEach((patient) => {
+          const option = document.createElement('option');
+          option.value = String(patient.patient_id || '');
+          option.dataset.patient = JSON.stringify(patient);
+          option.textContent = `${patient.patient_name || '-'} • ${patient.gender || '-'} • Age ${patient.age ?? '-'} • ${patient.display_patient_id || patient.patient_id || '-'}`;
+          patientLookupSelect.appendChild(option);
+        });
+
+        patientSelectWrapper.classList.remove('hidden');
+        setStatus(patients.length === 1 ? '1 existing patient found. Select to auto-fill.' : 'Multiple matches found. Select one if needed.', 'warning');
+      } catch (_err) {
+        setStatus('Lookup failed. Continue with manual entry.', 'warning');
+      }
+    };
+
+    phoneInput.addEventListener('input', () => {
+      phoneInput.value = phoneInput.value.replace(/\D/g, '').slice(0, 10);
+      clearPatientFields();
+      resetPatientSelect();
+      if (lookupDebounce) clearTimeout(lookupDebounce);
+      lookupDebounce = setTimeout(runLookup, 450);
+    });
+
+    patientLookupSelect.addEventListener('change', () => {
+      const selected = patientLookupSelect.options[patientLookupSelect.selectedIndex];
+      if (!selected || !selected.value) {
+        existingPatientInput.value = '';
+        setStatus('Selection cleared. You can register as a new patient.', 'info');
+        return;
+      }
+
+      try {
+        const patient = JSON.parse(selected.dataset.patient || '{}');
+        fillPatient(patient);
+        setStatus('Existing patient selected. You can proceed directly.', 'success');
+      } catch (_err) {
+        existingPatientInput.value = '';
+      }
+    });
+
+    [nameInput, ageInput, genderInput, nicInput].forEach((field) => {
+      field.addEventListener('input', () => {
+        if (existingPatientInput.value) {
+          existingPatientInput.value = '';
+          patientLookupSelect.value = '';
+          setStatus('Manual details changed. This will be treated as a new patient.', 'info');
+        }
+      });
+    });
+
+    [doctorInput, dateInput].forEach((field) => {
+      field.addEventListener('change', loadDoctorMeta);
+    });
+
+    ageInput.addEventListener('input', () => {
+      ageInput.value = ageInput.value.replace(/\D/g, '').slice(0, 3);
+    });
+
+    nicInput.addEventListener('input', () => {
+      nicInput.value = nicInput.value.toUpperCase().replace(/\s/g, '');
+    });
+
+    amountReceivedInput.addEventListener('input', () => {
+      amountReceivedInput.value = amountReceivedInput.value.replace(/[^\d.]/g, '');
+      updatePaymentPreview();
+    });
+
+    form.addEventListener('submit', (event) => {
+      clearFieldErrors();
+      let valid = true;
+
+      const phone = phoneInput.value.trim();
+      const name = nameInput.value.trim().replace(/\s+/g, ' ');
+      const age = ageInput.value.trim();
+      const nic = nicInput.value.trim();
+      const total = Number.parseFloat(totalAmountInput.value || '0') || 0;
+      const amount = Number.parseFloat(amountReceivedInput.value || '0') || 0;
+
+      const phonePattern = /^\d{10}$/;
+      const namePattern = /^[A-Za-z ]{2,}$/;
+      const nicPattern = /^(\d{9}[VvXx]|\d{12})$/;
+
+      nameInput.value = name;
+
+      if (!phonePattern.test(phone)) {
+        showError(phoneError, 'Phone number must be exactly 10 digits.');
+        valid = false;
+      }
+
+      if (!existingPatientInput.value) {
+        if (!namePattern.test(name)) {
+          showError(nameError, 'Name must contain only letters and spaces (min 2 chars).');
+          valid = false;
+        }
+
+        const ageNumber = Number(age);
+        if (!/^\d+$/.test(age) || Number.isNaN(ageNumber) || ageNumber < 0 || ageNumber > 120) {
+          showError(ageError, 'Age must be a whole number between 0 and 120.');
+          valid = false;
+        }
+
+        if (!genderInput.value) {
+          showError(genderError, 'Please select gender.');
+          valid = false;
+        }
+
+        if (nic && !nicPattern.test(nic)) {
+          showError(nicError, 'NIC must be 12 digits or 9 digits + V/X.');
+          valid = false;
+        }
+      }
+
+      if (amount < total) {
+        showError(amountError, `Payment must be at least LKR ${total.toFixed(2)} before token generation.`);
+        valid = false;
+      }
+
+      if (!valid) {
+        event.preventDefault();
+      }
+    });
+
+    updateTotals();
+    loadDoctorMeta();
+  })();
+</script>
+{% endblock %}
