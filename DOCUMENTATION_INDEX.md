@@ -1,4 +1,4 @@
-# 📚 Documentation Index - HIMS Reception Desk System
+# 📚 Documentation Index   - HIMS Reception Desk System
 
 ## Quick Navigation
 
