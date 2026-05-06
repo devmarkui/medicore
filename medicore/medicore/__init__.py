@@ -6,7 +6,6 @@ from medicore.routes.dashboard_routes import dashboard_bp
 from medicore.routes.appointment_routes import appointments_bp
 from medicore.routes.billing_routes import billing_bp
 from medicore.routes.clinical_routes import clinical_bp
-from medicore.routes.pharmacy_routes import pharmacy_bp
 from medicore.routes.lab_routes import lab_bp
 from medicore.routes.communications_routes import communications_bp
 from medicore.routes.settings_routes import settings_bp
@@ -19,6 +18,7 @@ from medicore.routes.patient_portal_routes import portal_bp
 from medicore.routes.telehealth_routes import telehealth_bp
 from medicore.routes.clinical_refinements_routes import clinical_refinements_bp
 from medicore.routes.reception_routes import reception_bp
+from medicore.routes.inventory_routes import inventory_bp
 from medicore.realtime.socketio import init_socketio
 from medicore.i18n import init_i18n
 from medicore.security.session_security import configure_session
@@ -37,7 +37,6 @@ def create_app() -> Flask:
     app.register_blueprint(appointments_bp)
     app.register_blueprint(billing_bp)
     app.register_blueprint(clinical_bp)
-    app.register_blueprint(pharmacy_bp)
     app.register_blueprint(lab_bp)
     app.register_blueprint(communications_bp)
     app.register_blueprint(settings_bp)
@@ -51,6 +50,7 @@ def create_app() -> Flask:
     app.register_blueprint(telehealth_bp)
     app.register_blueprint(clinical_refinements_bp)
     app.register_blueprint(reception_bp)
+    app.register_blueprint(inventory_bp)
 
     @app.get("/")
     def root_redirect():

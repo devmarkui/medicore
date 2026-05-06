@@ -11,6 +11,7 @@ from medicore.communications.communications_service import send_sms
 from medicore.db.connection import get_db_cursor
 from medicore.security.rbac import login_required, role_required
 from medicore.security.web import validate_csrf_token
+from medicore.inventory.inventory_service import reduce_stock_for_sale
 
 
 reception_bp = Blueprint("reception", __name__, url_prefix="/reception")
@@ -143,14 +144,20 @@ def reception_confirm():
             if not patient_id:
                 raise ValueError("Patient identification failed.")
 
-            # 2. Add Doctor Fee & Hospital Fee to items if present
+            # 2. Add Doctor Fee & Hospital Fee if present
             doctor_id = payload.get("doctor_id")
             appointment_date = payload.get("appointment_date")
             token_number = payload.get("token_number")
             
-            # If we have doctor info, we ensure it's in the bill
-            # Note: The frontend might already include them, but we enforce it here for channeling
-            # as per the new requirement to 'Save booking + token + bill + bill items'
+            doctor_fee = Decimal("0.00")
+            hospital_fee = Decimal("0.00")
+            
+            if doctor_id:
+                cursor.execute("SELECT doctor_fee, hospital_fee FROM doctors WHERE doctor_id = %s", (doctor_id,))
+                doc_row = cursor.fetchone()
+                if doc_row:
+                    doctor_fee = Decimal(str(doc_row["doctor_fee"]))
+                    hospital_fee = Decimal(str(doc_row["hospital_fee"]))
             
             # 3. Create Appointment if Doctor Selected
             appointment_id = None
@@ -167,41 +174,99 @@ def reception_confirm():
                 appointment_id = cursor.lastrowid
 
             # 4. Calculate Totals
-            subtotal = Decimal("0.00")
+            # Subtotal here includes service items only, 
+            # while doctor_fee and hospital_fee are stored separately
+            services_subtotal = Decimal("0.00")
             for item in items:
                 price = Decimal(str(item.get("price", 0)))
                 qty = int(item.get("quantity", 1))
-                subtotal += (price * qty)
+                services_subtotal += (price * qty)
             
+            # Grand Total = Services + Doctor + Hospital - Discount
+            total_amount = (services_subtotal + doctor_fee + hospital_fee - discount)
+
             # 5. Create Invoice (Pending)
             invoice_code = _generate_invoice_id(cursor)
             
             cursor.execute(
                 """
                 INSERT INTO invoices (
-                    invoice_number, patient_id, appointment_id, subtotal, tax_amount, 
+                    invoice_number, patient_id, appointment_id, subtotal, 
+                    doctor_fee, hospital_fee, tax_amount, 
                     discount_amount, total_amount, status, created_at, created_by
-                ) VALUES (%s, %s, %s, %s, 0, %s, %s, 'Pending', NOW(), %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s, 'Pending', NOW(), %s)
                 """,
-                (invoice_code, patient_id, appointment_id, subtotal, discount, subtotal - discount, session.get("user_id"))
+                (invoice_code, patient_id, appointment_id, services_subtotal, doctor_fee, hospital_fee, discount, total_amount, session.get("user_id"))
             )
             # Use the auto-increment BIGINT id for linked items
             real_invoice_id = cursor.lastrowid
             
-            # 6. Create Invoice Items
+            # 6. Create Invoice Items + handle inventory stock reduction
             for item in items:
                 desc = item.get("item_name", "Service")
                 qty = int(item.get("quantity", 1))
                 price = Decimal(str(item.get("price", 0)))
                 line_total = (price * qty).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                 
-                cursor.execute(
-                    """
-                    INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, line_total)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    (real_invoice_id, desc, qty, price, line_total)
-                )
+                # Determine if this is a service item or a direct inventory item
+                item_type = item.get("type", "service")
+                service_item_id = item.get("item_id") if item_type != "inventory" else None
+                direct_inventory_id = item.get("item_id") if item_type == "inventory" else None
+                
+                # Try to insert with optional service_item_id / inventory_item_id columns
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, line_total)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (real_invoice_id, desc, qty, price, line_total)
+                    )
+                except Exception:
+                    cursor.execute(
+                        """
+                        INSERT INTO invoice_items (invoice_id, description, quantity, unit_price, line_total)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (real_invoice_id, desc, qty, price, line_total)
+                    )
+                
+                # ── Inventory Stock Deduction ──────────────────────────────
+                # Case A: direct inventory sale item (type == 'inventory')
+                if direct_inventory_id:
+                    reduce_stock_for_sale(
+                        inventory_item_id=int(direct_inventory_id),
+                        qty=float(qty),
+                        ref_id=str(invoice_code),
+                        user_id=session.get("user_id"),
+                        cursor=cursor
+                    )
+                
+                # Case B: service item that has a linked inventory item
+                elif service_item_id:
+                    cursor.execute(
+                        "SELECT linked_inventory_item_id FROM service_items WHERE item_id = %s LIMIT 1",
+                        (int(service_item_id),)
+                    )
+                    svc_row = cursor.fetchone()
+                    if svc_row and svc_row.get("linked_inventory_item_id"):
+                        linked_inv_id = int(svc_row["linked_inventory_item_id"])
+                        # Deduct stock for the linked inventory item
+                        cursor.execute(
+                            "UPDATE inventory_items SET quantity_on_hand = quantity_on_hand - %s WHERE item_id = %s",
+                            (qty, linked_inv_id)
+                        )
+                        from medicore.inventory.inventory_service import log_inventory_transaction
+                        log_inventory_transaction(
+                            cursor,
+                            linked_inv_id,
+                            "SALE",
+                            float(qty),
+                            "Bill",
+                            str(invoice_code),
+                            f"Service sale via linked inventory item ID {service_item_id}",
+                            session.get("user_id")
+                        )
 
             return jsonify({
                 "status": "success",

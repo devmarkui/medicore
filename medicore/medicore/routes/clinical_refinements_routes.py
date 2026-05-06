@@ -33,9 +33,9 @@ def _load_patient_snapshot(patient_id: str) -> dict | None:
 def _load_latest_vitals(patient_id: str) -> dict | None:
     query = """
         SELECT v.blood_pressure, v.heart_rate, v.temperature, v.weight_kg, v.height_cm,
-               v.record_date, COALESCE(u.full_name, u.username) AS recorded_by
+               v.record_date, COALESCE(u.full_name, u.email) AS recorded_by
         FROM patient_vitals v
-        LEFT JOIN users u ON u.id = v.recorded_by
+        LEFT JOIN users u ON u.user_id = v.recorded_by
         WHERE v.patient_id = %s
         ORDER BY v.record_date DESC
         LIMIT 1
@@ -112,9 +112,9 @@ def patient_summary(patient_id: str):
 
     vitals_query = """
         SELECT v.blood_pressure, v.heart_rate, v.temperature, v.weight_kg, v.height_cm,
-               v.record_date, COALESCE(u.full_name, u.username) AS recorded_by
+               v.record_date, COALESCE(u.full_name, u.email) AS recorded_by
         FROM patient_vitals v
-        LEFT JOIN users u ON u.id = v.recorded_by
+        LEFT JOIN users u ON u.user_id = v.recorded_by
         WHERE v.patient_id = %s
         ORDER BY v.record_date DESC
         LIMIT 20
@@ -122,18 +122,18 @@ def patient_summary(patient_id: str):
     consultations_query = """
         SELECT c.consultation_id, c.consultation_date, c.chief_complaint,
                c.diagnosis, c.clinical_notes,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM consultations c
-        LEFT JOIN users u ON u.id = c.doctor_id
+        LEFT JOIN users u ON u.user_id = c.doctor_id
         WHERE c.patient_id = %s
         ORDER BY c.consultation_date DESC
         LIMIT 50
     """
     prescriptions_query = """
         SELECT p.prescription_id, p.prescription_date, p.general_instructions,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM prescriptions p
-        LEFT JOIN users u ON u.id = p.doctor_id
+        LEFT JOIN users u ON u.user_id = p.doctor_id
         WHERE p.patient_id = %s
         ORDER BY p.prescription_date DESC
         LIMIT 50

@@ -42,7 +42,7 @@ def _load_staff():
 def _load_attendance(selected_date: date):
     query = """
      SELECT a.attendance_id, a.staff_id, a.attendance_date, a.clock_in_time, a.clock_out_time, a.status,
-               COALESCE(u.full_name, u.username) AS staff_name
+               COALESCE(u.full_name, u.email) AS staff_name
         FROM staff_attendance a
      INNER JOIN users u ON u.user_id = a.staff_id
      WHERE a.attendance_date = %s
@@ -56,7 +56,7 @@ def _load_attendance(selected_date: date):
 def _load_leave_requests():
     query = """
      SELECT r.leave_request_id, r.staff_id, r.start_date, r.end_date, r.leave_type, r.status,
-               COALESCE(u.full_name, u.username) AS staff_name
+               COALESCE(u.full_name, u.email) AS staff_name
     FROM staff_leave_requests r
     INNER JOIN users u ON u.user_id = r.staff_id
         ORDER BY r.start_date DESC

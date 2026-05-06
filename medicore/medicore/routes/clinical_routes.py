@@ -60,9 +60,9 @@ def clinical_workspace(appointment_id: int):
 
     vitals_query = """
         SELECT v.blood_pressure, v.heart_rate, v.temperature, v.weight_kg, v.height_cm,
-               v.record_date, COALESCE(u.full_name, u.username) AS recorded_by
+               v.record_date, COALESCE(u.full_name, u.email) AS recorded_by
         FROM patient_vitals v
-        LEFT JOIN users u ON u.id = v.recorded_by
+        LEFT JOIN users u ON u.user_id = v.recorded_by
         WHERE v.patient_id = %s
         ORDER BY v.record_date DESC
         LIMIT 1
@@ -70,9 +70,9 @@ def clinical_workspace(appointment_id: int):
 
     consultations_query = """
         SELECT c.consultation_id, c.consultation_date, c.chief_complaint, c.diagnosis,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM consultations c
-        LEFT JOIN users u ON u.id = c.doctor_id
+        LEFT JOIN users u ON u.user_id = c.doctor_id
         WHERE c.patient_id = %s
         ORDER BY c.consultation_date DESC
         LIMIT 15
@@ -201,10 +201,10 @@ def prescription_print(prescription_id: str):
         SELECT p.prescription_id, p.prescription_date, p.general_instructions,
                CONCAT(pt.first_name, ' ', pt.last_name) AS patient_name,
                pt.date_of_birth, pt.blood_group,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM prescriptions p
         INNER JOIN patients pt ON pt.patient_id = p.patient_id
-        INNER JOIN users u ON u.id = p.doctor_id
+        INNER JOIN users u ON u.user_id = p.doctor_id
         WHERE p.prescription_id = %s
         LIMIT 1
     """

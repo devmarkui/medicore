@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import secrets
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 
 from medicore.db.connection import get_db_cursor
 from medicore.security.passwords import hash_password
@@ -175,9 +175,9 @@ def audit_log_view():
     query = """
         SELECT a.log_id, a.user_id, a.action_type, a.table_affected, a.record_id,
                a.old_values, a.new_values, a.ip_address, a.created_at,
-               COALESCE(u.full_name, u.username) AS user_name
+               COALESCE(u.full_name, u.email) AS user_name
         FROM audit_logs a
-        LEFT JOIN users u ON u.id = a.user_id
+        LEFT JOIN users u ON u.user_id = a.user_id
         WHERE 1=1
     """
     params = []
@@ -543,6 +543,24 @@ def _load_service_items_for_category(category_id: int) -> list[dict]:
 def services_management_dashboard():
     """Main services management dashboard."""
     categories = _load_all_service_categories()
+
+    # Load all items with their category name + linked inventory info
+    items_query = """
+        SELECT si.item_id, si.item_code, si.item_name, si.category_id,
+               si.price, si.description, si.is_active, si.display_order,
+               si.linked_inventory_item_id,
+               sc.category_name,
+               inv.item_name AS linked_inv_name,
+               inv.quantity_on_hand AS linked_inv_stock
+        FROM service_items si
+        INNER JOIN service_categories sc ON sc.category_id = si.category_id
+        LEFT JOIN inventory_items inv ON inv.item_id = si.linked_inventory_item_id
+        ORDER BY sc.display_order ASC, si.display_order ASC, si.item_name ASC
+    """
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(items_query)
+        all_items = cursor.fetchall() or []
+
     return render_template(
         "settings/services_management.html",
         title="Services Management",
@@ -552,8 +570,47 @@ def services_management_dashboard():
             "role": session.get("role", ""),
         },
         categories=categories,
+        all_items=all_items,
         csrf_token=generate_csrf_token(),
     )
+
+
+@settings_bp.get("/api/inventory/search")
+@login_required
+@role_required(ALLOWED_ROLES)
+def api_search_inventory():
+    """JSON API: search inventory items."""
+    q = (request.args.get("q") or "").strip()
+    usage_filter = request.args.get("usage", "all")  # 'sale', 'both', or 'all'
+
+    base_query = """
+        SELECT item_id, item_name, item_code, selling_price, quantity_on_hand, unit, usage_mode
+        FROM inventory_items
+        WHERE status = 'Active'
+    """
+    params: list = []
+
+    if usage_filter in ("sale", "both"):
+        base_query += " AND usage_mode IN ('Sale', 'Both')"
+
+    if q:
+        base_query += " AND (item_name LIKE %s OR item_code LIKE %s)"
+        params.extend([f"%{q}%", f"%{q}%"])
+
+    base_query += " ORDER BY item_name ASC LIMIT 30"
+
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(base_query, tuple(params))
+        items = cursor.fetchall() or []
+
+    # Convert Decimal to float for JSON serialisation
+    for item in items:
+        if item.get("selling_price") is not None:
+            item["selling_price"] = float(item["selling_price"])
+
+    return jsonify({"ok": True, "items": items})
+
+
 
 
 @settings_bp.post("/services/category/add")
@@ -778,4 +835,95 @@ def toggle_service_item(item_id: int):
         )
 
     flash("Item status updated.", "success")
+    return redirect(url_for("settings.services_management_dashboard"))
+
+@settings_bp.get("/inventory/mapping/<int:service_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def service_inventory_mapping(service_id: int):
+    """View and manage inventory mapping for a service."""
+    service_query = "SELECT item_id, item_name, item_code FROM service_items WHERE item_id = %s"
+    items_query = "SELECT item_id, item_name, item_code, quantity_on_hand, unit FROM inventory_items WHERE status = 'Active' ORDER BY item_name"
+    mapping_query = """
+        SELECT m.mapping_id, m.inventory_item_id, m.quantity_required, i.item_name, i.unit
+        FROM service_inventory_mapping m
+        JOIN inventory_items i ON m.inventory_item_id = i.item_id
+        WHERE m.service_item_id = %s
+    """
+    
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(service_query, (service_id,))
+        service = cursor.fetchone()
+        if not service:
+            flash("Service not found.", "error")
+            return redirect(url_for("settings.services_management_dashboard"))
+            
+        cursor.execute(items_query)
+        inventory_items = cursor.fetchall() or []
+        
+        cursor.execute(mapping_query, (service_id,))
+        mappings = cursor.fetchall() or []
+        
+    return render_template(
+        "settings/service_inventory_mapping.html",
+        title=f"Inventory Mapping: {service['item_name']}",
+        active_page="settings",
+        current_user={
+            "username": session.get("username", "User"),
+            "role": session.get("role", ""),
+        },
+        service=service,
+        inventory_items=inventory_items,
+        mappings=mappings,
+        csrf_token=generate_csrf_token(),
+    )
+
+
+@settings_bp.post("/inventory/mapping/add/<int:service_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def add_service_mapping(service_id: int):
+    """Add a new inventory requirement to a service."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return redirect(url_for("settings.service_inventory_mapping", service_id=service_id))
+        
+    inventory_item_id = request.form.get("inventory_item_id")
+    quantity = request.form.get("quantity")
+    stage = request.form.get("usage_stage", "on_completion")
+    is_required = 1 if request.form.get("is_required") == "on" else 0
+    
+    query = """
+        INSERT INTO service_inventory_mapping 
+        (service_item_id, inventory_item_id, quantity_required, usage_stage, is_required)
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE 
+            quantity_required = VALUES(quantity_required),
+            usage_stage = VALUES(usage_stage),
+            is_required = VALUES(is_required)
+    """
+    
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query, (service_id, inventory_item_id, quantity, stage, is_required))
+        
+    flash("Inventory mapping updated for this service.", "success")
+    return redirect(url_for("settings.service_inventory_mapping", service_id=service_id))
+
+@settings_bp.post("/inventory/mapping/delete/<int:mapping_id>")
+@login_required
+@role_required(ALLOWED_ROLES)
+def delete_service_mapping(mapping_id: int):
+    """Remove an inventory requirement from a service."""
+    if not validate_csrf_token():
+        flash("Invalid request token.", "error")
+        return jsonify({"ok": False, "message": "Invalid CSRF"}), 400
+        
+    service_id = request.args.get("service_id")
+    
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute("DELETE FROM service_inventory_mapping WHERE mapping_id = %s", (mapping_id,))
+        
+    flash("Mapping removed.", "success")
+    if service_id:
+        return redirect(url_for("settings.service_inventory_mapping", service_id=service_id))
     return redirect(url_for("settings.services_management_dashboard"))

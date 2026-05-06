@@ -11,6 +11,7 @@ from medicore.db.connection import get_db_cursor
 from medicore.security.rbac import login_required, role_required
 from medicore.security.web import generate_csrf_token, validate_csrf_token
 from medicore.communications.communications_service import send_sms
+from medicore.inventory.inventory_service import reduce_stock_for_service
 
 appointments_bp = Blueprint("appointments", __name__, url_prefix="/appointments")
 
@@ -308,7 +309,7 @@ def appointments_dashboard():
          a.appointment_time, a.status, a.reason_for_visit,
          a.appointment_mode, a.telehealth_link,
          CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
-         COALESCE(d.doctor_name, u.full_name, u.username) AS doctor_name
+         COALESCE(d.doctor_name, u.full_name, u.email) AS doctor_name
         FROM appointments a
         INNER JOIN patients p ON p.patient_id = a.patient_id
      LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
@@ -364,7 +365,7 @@ def doctor_schedule():
         SELECT a.appointment_id, a.patient_id, a.doctor_id, a.appointment_date,
                a.appointment_time, a.status, a.reason_for_visit,
          CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
-         COALESCE(d.doctor_name, u.full_name, u.username) AS doctor_name
+         COALESCE(d.doctor_name, u.full_name, u.email) AS doctor_name
         FROM appointments a
         INNER JOIN patients p ON p.patient_id = a.patient_id
      LEFT JOIN doctors d ON d.doctor_id = a.doctor_id
@@ -405,8 +406,8 @@ def doctor_schedule():
 @role_required(RECEPTION_ROLES)
 def appointment_book_form():
     selected_date = _parse_date(request.args.get("date")) or _today_colombo()
-    flash("Use Reception / Channeling Desk for complete booking + billing + token flow.", "info")
-    return redirect(url_for("appointments.channeling_desk", date=selected_date.isoformat()))
+    flash("Use Reception Desk for complete booking + billing + token flow.", "info")
+    return redirect(url_for("appointments.reception_desk", date=selected_date.isoformat()))
 
 
 @appointments_bp.post("/book")
@@ -497,6 +498,28 @@ def appointment_update_status(appointment_id: int):
 
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(update_query, (new_status, appointment_id))
+        
+        # --- Inventory Integration ---
+        if new_status == "Completed":
+            # 1. Find the invoice for this appointment
+            cursor.execute("SELECT invoice_id FROM invoices WHERE appointment_id = %s", (appointment_id,))
+            inv_row = cursor.fetchone()
+            if inv_row:
+                invoice_id = inv_row['invoice_id']
+                # 2. Get all services (invoice_items) with service_item_id links
+                cursor.execute("SELECT service_item_id, quantity FROM invoice_items WHERE invoice_id = %s AND service_item_id IS NOT NULL", (invoice_id,))
+                items = cursor.fetchall() or []
+                
+                # 3. Reduce stock for each service item
+                for item in items:
+                    reduce_stock_for_service(
+                        service_item_id=item['service_item_id'], 
+                        service_qty=item['quantity'], 
+                        ref_type='Bill', 
+                        ref_id=str(appointment_id),
+                        stage='on_completion',
+                        user_id=session.get("user_id")
+                    )
 
     flash("Appointment status updated.", "success")
     return redirect(url_for("appointments.appointments_dashboard"))
@@ -510,7 +533,7 @@ def reception_desk():
     return render_template(
         "appointments/reception_desk_v2.html",
         title="Reception Desk - Service Booking",
-        active_page="appointments",
+        active_page="reception",
         current_user={
             "username": session.get("username", "User"),
             "role": session.get("role", ""),
@@ -523,42 +546,24 @@ def reception_desk():
 @login_required
 @role_required(RECEPTION_ROLES)
 def channeling_desk():
-    selected_date = _parse_date(request.args.get("date")) or _today_colombo()
-    selected_doctor = request.args.get("doctor_id", "")
-    doctors = _load_doctors()
-    summary = session.pop("last_channeling_summary", None)
-
-    return render_template(
-        "appointments/channeling_desk.html",
-        title="Reception Channeling Desk",
-        active_page="appointments",
-        current_user={
-            "username": session.get("username", "User"),
-            "role": session.get("role", ""),
-        },
-        doctors=doctors,
-        selected_date=selected_date.isoformat(),
-        selected_doctor=str(selected_doctor),
-        payment_methods=PAYMENT_METHODS,
-        csrf_token=generate_csrf_token(),
-        summary=summary,
-    )
+    """Redirect old channeling desk URL to modern reception desk."""
+    return redirect(url_for("appointments.reception_desk"), 301)
 
 
-@appointments_bp.get("/channeling-desk/patient-lookup")
+@appointments_bp.get("/api/patient-lookup")
 @login_required
 @role_required(RECEPTION_ROLES)
-def channeling_patient_lookup():
+def api_patient_lookup():
     phone = (request.args.get("phone") or "").strip()
     if not PHONE_PATTERN.match(phone):
         return jsonify({"ok": True, "patients": []})
     return jsonify({"ok": True, "patients": _patient_lookup_by_phone(phone)})
 
 
-@appointments_bp.get("/channeling-desk/doctor-meta")
+@appointments_bp.get("/api/doctor-meta")
 @login_required
 @role_required(RECEPTION_ROLES)
-def channeling_doctor_meta():
+def api_doctor_meta():
     doctor_id_raw = (request.args.get("doctor_id") or "").strip()
     booking_date = _parse_date(request.args.get("date"))
 
@@ -568,313 +573,6 @@ def channeling_doctor_meta():
     payload = _load_doctor_channeling_meta(int(doctor_id_raw), booking_date)
     payload["ok"] = True
     return jsonify(payload)
-
-
-@appointments_bp.post("/channeling-desk/confirm")
-@login_required
-@role_required(RECEPTION_ROLES)
-def channeling_confirm():
-    if not validate_csrf_token():
-        flash("Invalid request token. Please retry.", "error")
-        return redirect(url_for("appointments.channeling_desk"))
-
-    existing_patient_id_raw = (request.form.get("existing_patient_id") or "").strip()
-    phone_number = (request.form.get("phone_number") or "").strip()
-    patient_name = _normalize_spaces(request.form.get("patient_name") or "")
-    age_raw = (request.form.get("age") or "").strip()
-    gender = (request.form.get("gender") or "").strip()
-    nic = (request.form.get("nic") or "").strip()
-
-    doctor_id_raw = (request.form.get("doctor_id") or "").strip()
-    appointment_date_raw = (request.form.get("appointment_date") or "").strip()
-    fixed_appointment_time = time(hour=0, minute=0)
-    reason_for_visit = "Channeling"
-
-    payment_method = (request.form.get("payment_method") or "").strip()
-    doctor_fee = _parse_money(request.form.get("doctor_fee"), "0.00")
-    hospital_fee = _parse_money(request.form.get("hospital_fee"), "0.00")
-    amount_received = _parse_money(request.form.get("amount_received"), "0.00")
-    total_amount = (doctor_fee + hospital_fee).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-    errors: list[str] = []
-
-    if not PHONE_PATTERN.match(phone_number):
-        errors.append("Phone number must be exactly 10 digits.")
-
-    if existing_patient_id_raw and not existing_patient_id_raw.isdigit():
-        errors.append("Invalid selected patient.")
-
-    if not existing_patient_id_raw:
-        if not NAME_PATTERN.match(patient_name):
-            errors.append("Patient name must be at least 2 letters and contain only letters/spaces.")
-        if not age_raw.isdigit() or not (0 <= int(age_raw) <= 120):
-            errors.append("Age must be between 0 and 120.")
-        if gender not in {"Male", "Female", "Other"}:
-            errors.append("Please select a valid gender.")
-        if nic and not NIC_PATTERN.match(nic):
-            errors.append("NIC must be 9 digits + V/X or 12 digits.")
-
-    if not doctor_id_raw.isdigit():
-        errors.append("Doctor is required.")
-
-    appointment_date = _parse_date(appointment_date_raw)
-    if not appointment_date:
-        errors.append("Valid appointment date is required.")
-
-    if payment_method not in PAYMENT_METHODS:
-        errors.append("Payment method must be Cash or Card.")
-
-    if doctor_fee < 0 or hospital_fee < 0:
-        errors.append("Fees cannot be negative.")
-
-    if amount_received < total_amount:
-        errors.append("Payment must be completed before generating token.")
-
-    if errors:
-        for err in errors:
-            flash(err, "error")
-        return redirect(url_for("appointments.channeling_desk", date=appointment_date_raw, doctor_id=doctor_id_raw))
-
-    doctor_id = int(doctor_id_raw)
-    has_patient_number = _patients_has_column("patient_number")
-    has_birth_year = _patients_has_column("birth_year")
-    has_token_number = _appointments_has_column("token_number")
-
-    with get_db_cursor(dictionary=True) as (_conn, cursor):
-        if existing_patient_id_raw:
-            patient_id = int(existing_patient_id_raw)
-            cursor.execute(
-                "SELECT patient_id, first_name, last_name FROM patients WHERE patient_id = %s LIMIT 1",
-                (patient_id,),
-            )
-            patient_row = cursor.fetchone()
-            if not patient_row:
-                flash("Selected patient was not found.", "error")
-                return redirect(url_for("appointments.channeling_desk", date=appointment_date_raw, doctor_id=doctor_id_raw))
-            display_name = f"{(patient_row.get('first_name') or '').strip()} {(patient_row.get('last_name') or '').strip()}".strip()
-            patient_identifier = patient_id
-        else:
-            first_name, last_name = _split_patient_name(patient_name)
-            if last_name == first_name:
-                last_name = ""
-
-            patient_columns = ["first_name", "last_name", "phone_number", "gender", "nic_number", "created_at"]
-            patient_values: list = [first_name, last_name, phone_number, gender, nic or None, datetime.now(ZoneInfo("Asia/Colombo"))]
-
-            if has_patient_number:
-                patient_columns.insert(0, "patient_number")
-                patient_values.insert(0, _generate_patient_number(cursor))
-
-            if has_birth_year:
-                patient_columns.extend(["birth_year", "date_of_birth"])
-                patient_values.extend([_derive_birth_year_from_age(int(age_raw)), None])
-            else:
-                approx_birth_date = date(_derive_birth_year_from_age(int(age_raw)), 1, 1)
-                patient_columns.append("date_of_birth")
-                patient_values.append(approx_birth_date)
-
-            placeholders = ", ".join(["%s"] * len(patient_columns))
-            insert_patient = f"INSERT INTO patients ({', '.join(patient_columns)}) VALUES ({placeholders})"
-            cursor.execute(insert_patient, tuple(patient_values))
-            patient_id = cursor.lastrowid
-            display_name = patient_name
-            patient_identifier = patient_id
-
-        appointment_insert_columns = [
-            "patient_id",
-            "doctor_id",
-            "appointment_date",
-            "appointment_time",
-            "status",
-            "reason_for_visit",
-            "created_at",
-        ]
-        appointment_insert_values: list = [
-            patient_id,
-            doctor_id,
-            appointment_date,
-            fixed_appointment_time,
-            "Scheduled",
-            reason_for_visit,
-            datetime.now(ZoneInfo("Asia/Colombo")),
-        ]
-        if has_token_number:
-            appointment_insert_columns.append("token_number")
-            appointment_insert_values.append(None)
-
-        appointment_placeholder = ", ".join(["%s"] * len(appointment_insert_columns))
-        cursor.execute(
-            f"INSERT INTO appointments ({', '.join(appointment_insert_columns)}) VALUES ({appointment_placeholder})",
-            tuple(appointment_insert_values),
-        )
-        appointment_id = cursor.lastrowid
-
-        invoice_number = _generate_invoice_number(cursor)
-        cursor.execute(
-            """
-            INSERT INTO invoices (
-                invoice_number, patient_id, appointment_id, invoice_date,
-                subtotal, discount, tax_amount, total_amount,
-                paid_amount, due_amount, status, payment_status, created_at
-            ) VALUES (%s, %s, %s, CURDATE(), %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-            """,
-            (
-                invoice_number,
-                patient_id,
-                appointment_id,
-                total_amount,
-                Decimal("0.00"),
-                Decimal("0.00"),
-                total_amount,
-                amount_received,
-                Decimal("0.00"),
-                "Paid",
-                "Paid",
-            ),
-        )
-        invoice_id = cursor.lastrowid
-
-        cursor.execute(
-            """
-            INSERT INTO invoice_items (
-                invoice_id, item_type, reference_id, description,
-                quantity, unit_price, total_price, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
-            """,
-            (
-                invoice_id,
-                "Service",
-                appointment_id,
-                "Doctor Channeling Fee",
-                1,
-                doctor_fee,
-                doctor_fee,
-            ),
-        )
-        cursor.execute(
-            """
-            INSERT INTO invoice_items (
-                invoice_id, item_type, reference_id, description,
-                quantity, unit_price, total_price, created_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
-            """,
-            (
-                invoice_id,
-                "Service",
-                appointment_id,
-                "Hospital Channeling Fee",
-                1,
-                hospital_fee,
-                hospital_fee,
-            ),
-        )
-
-        cursor.execute(
-            """
-            INSERT INTO payments (
-                invoice_id, payment_date, payment_method,
-                amount_paid, reference_number, notes, created_at
-            ) VALUES (%s, NOW(), %s, %s, %s, %s, NOW())
-            """,
-            (
-                invoice_id,
-                payment_method,
-                total_amount,
-                f"CH-{appointment_id}",
-                "Paid at reception channeling desk",
-            ),
-        )
-
-        max_paid_token = 0
-        if has_token_number:
-            cursor.execute(
-                """
-                SELECT COALESCE(MAX(a.token_number), 0) AS max_token
-                FROM appointments a
-                INNER JOIN invoices i ON i.appointment_id = a.appointment_id
-                WHERE a.doctor_id = %s
-                  AND a.appointment_date = %s
-                  AND a.status != 'Cancelled'
-                  AND i.payment_status = 'Paid'
-                  AND a.token_number IS NOT NULL
-                FOR UPDATE
-                """,
-                (doctor_id, appointment_date),
-            )
-            paid_row = cursor.fetchone() or {}
-            max_paid_token = int(paid_row.get("max_token") or 0)
-
-        cursor.execute(
-            """
-            SELECT COALESCE(MAX(queue_number), 0) AS max_queue
-            FROM physical_queues
-            WHERE doctor_id = %s
-              AND queue_date = %s
-            FOR UPDATE
-            """,
-            (doctor_id, appointment_date),
-        )
-        max_queue = cursor.fetchone() or {}
-        fallback_max = int(max_queue.get("max_queue", 0))
-        token_number = (max(max_paid_token, fallback_max) if has_token_number else fallback_max) + 1
-
-        cursor.execute(
-            """
-            INSERT INTO physical_queues (
-                patient_id, doctor_id, queue_date, queue_number,
-                status, checked_in_time, notes
-            ) VALUES (%s, %s, %s, %s, %s, NOW(), %s)
-            """,
-            (
-                patient_id,
-                doctor_id,
-                appointment_date,
-                token_number,
-                "Waiting",
-                f"Auto-created from channeling desk. Appointment #{appointment_id}",
-            ),
-        )
-
-        if has_token_number:
-            cursor.execute(
-                "UPDATE appointments SET token_number = %s WHERE appointment_id = %s",
-                (token_number, appointment_id),
-            )
-
-        cursor.execute(
-            """
-            SELECT COALESCE(d.doctor_name, u.full_name, u.username) AS doctor_name
-            FROM doctors d
-            LEFT JOIN users u ON u.user_id = d.doctor_id
-            WHERE d.doctor_id = %s
-            LIMIT 1
-            """,
-            (doctor_id,),
-        )
-        doctor_row = cursor.fetchone() or {}
-
-    session["last_channeling_summary"] = {
-        "patient_name": display_name,
-        "patient_identifier": patient_identifier,
-        "doctor_name": doctor_row.get("doctor_name") or "Doctor",
-        "appointment_date": appointment_date.isoformat(),
-        "token_number": _format_token_for_display(token_number),
-        "invoice_number": invoice_number,
-        "doctor_fee": f"{doctor_fee:.2f}",
-        "hospital_fee": f"{hospital_fee:.2f}",
-        "total_amount": f"{total_amount:.2f}",
-        "amount_paid": f"{amount_received:.2f}",
-        "balance": f"{(amount_received - total_amount):.2f}",
-        "payment_method": payment_method,
-    }
-
-    flash(f"Payment completed. Token #{_format_token_for_display(token_number)} generated.", "success")
-    return redirect(url_for("appointments.channeling_desk", date=appointment_date.isoformat(), doctor_id=doctor_id))
-
-
-# ======================== RECEPTION DESK - DYNAMIC SERVICES API ========================
-
-
 @appointments_bp.get("/api/services/categories")
 @login_required
 @role_required(RECEPTION_ROLES)
@@ -896,17 +594,27 @@ def api_get_service_categories():
 @login_required
 @role_required(RECEPTION_ROLES)
 def api_get_service_items(category_id: int):
-    """API endpoint to fetch all active service items for a given category."""
+    """Fetch active service items for a category."""
     query = """
-        SELECT item_id, item_code, item_name, price, description
-        FROM service_items
-        WHERE category_id = %s AND is_active = TRUE
-        ORDER BY display_order ASC
+        SELECT si.item_id, si.item_code, si.item_name, si.price, si.description,
+               si.linked_inventory_item_id,
+               inv.quantity_on_hand AS inv_stock
+        FROM service_items si
+        LEFT JOIN inventory_items inv ON inv.item_id = si.linked_inventory_item_id
+        WHERE si.category_id = %s AND si.is_active = TRUE
+        ORDER BY si.display_order ASC
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(query, (category_id,))
         items = cursor.fetchall() or []
+
+    # Serialise Decimal prices
+    for item in items:
+        item["price"] = float(item["price"]) if item.get("price") is not None else 0.0
+
     return jsonify({"items": items})
+
+
 
 
 @appointments_bp.get("/api/services/all")
@@ -914,13 +622,51 @@ def api_get_service_items(category_id: int):
 @role_required(RECEPTION_ROLES)
 def api_get_all_service_items():
     """API endpoint to fetch all active service items from all categories."""
-    query = """
+    
+    # 1. Fetch standard service items
+    query_services = """
         SELECT si.item_id, si.item_code, si.item_name, si.price, si.description,
-               sc.category_name, sc.category_id
+               sc.category_name, sc.category_id, 'service' as type
         FROM service_items si
         JOIN service_categories sc ON si.category_id = sc.category_id
         WHERE si.is_active = TRUE AND sc.is_active = TRUE
         ORDER BY sc.display_order ASC, si.display_order ASC
+    """
+    
+    # 2. Fetch saleable inventory items (e.g. Pharmacy) to auto-expose them in Reception
+    query_inventory = """
+        SELECT i.item_id, i.item_code, i.item_name, i.selling_price as price, 
+               CONCAT('Stock: ', i.quantity_on_hand, ' ', i.unit) as description,
+               'Pharmacy' as category_name, 
+               (SELECT category_id FROM service_categories WHERE category_name = 'Pharmacy' LIMIT 1) as category_id,
+               'inventory' as type,
+               i.quantity_on_hand as stock
+        FROM inventory_items i
+        WHERE i.is_saleable = TRUE AND i.status = 'Active' AND i.category = 'Pharmacy'
+        ORDER BY i.item_name ASC
+    """
+    
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query_services)
+        services = cursor.fetchall() or []
+        
+        cursor.execute(query_inventory)
+        inventory = cursor.fetchall() or []
+        
+    items = services + inventory
+    return jsonify({"items": items})
+
+
+@appointments_bp.get("/api/inventory/saleable")
+@login_required
+@role_required(RECEPTION_ROLES)
+def api_get_saleable_inventory():
+    """API endpoint to fetch all active saleable inventory items for the reception desk."""
+    query = """
+        SELECT item_id, item_code, item_name, selling_price as price, quantity_on_hand as stock, category
+        FROM inventory_items
+        WHERE is_saleable = TRUE AND status = 'Active'
+        ORDER BY item_name ASC
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(query)

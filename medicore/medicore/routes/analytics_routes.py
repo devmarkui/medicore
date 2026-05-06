@@ -49,21 +49,12 @@ def _fetch_financial_summary(start_date, end_date):
           AND DATE(created_at) BETWEEN %s AND %s
     """
 
-    pharmacy_query = """
-        SELECT COALESCE(SUM(total_amount), 0) AS pharmacy_revenue
-        FROM pharmacy_sales
-        WHERE DATE(sale_date) BETWEEN %s AND %s
-    """
-
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(invoice_query, (start_date, end_date))
         invoice = cursor.fetchone() or {}
-        cursor.execute(pharmacy_query, (start_date, end_date))
-        pharmacy = cursor.fetchone() or {}
 
     return {
         "invoice_revenue": float(invoice.get("invoice_revenue", 0)),
-        "pharmacy_revenue": float(pharmacy.get("pharmacy_revenue", 0)),
         "total_discounts": float(invoice.get("total_discounts", 0)),
         "total_tax": float(invoice.get("total_tax", 0)),
     }
@@ -71,33 +62,26 @@ def _fetch_financial_summary(start_date, end_date):
 
 def _fetch_revenue_by_day(start_date, end_date):
     query = """
-        SELECT day, SUM(amount) AS revenue
-        FROM (
-            SELECT DATE(created_at) AS day, total_amount AS amount
-            FROM invoices
-            WHERE status != 'Cancelled'
-              AND DATE(created_at) BETWEEN %s AND %s
-            UNION ALL
-            SELECT DATE(sale_date) AS day, total_amount AS amount
-            FROM pharmacy_sales
-            WHERE DATE(sale_date) BETWEEN %s AND %s
-        ) revenue_union
+        SELECT DATE(created_at) AS day, SUM(total_amount) AS revenue
+        FROM invoices
+        WHERE status != 'Cancelled'
+          AND DATE(created_at) BETWEEN %s AND %s
         GROUP BY day
         ORDER BY day ASC
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
-        cursor.execute(query, (start_date, end_date, start_date, end_date))
+        cursor.execute(query, (start_date, end_date))
         rows = cursor.fetchall() or []
     return rows
 
 
 def _fetch_appointments_by_doctor(start_date, end_date):
     query = """
-        SELECT COALESCE(u.full_name, u.username) AS doctor_name, COUNT(*) AS total
+        SELECT COALESCE(u.full_name, u.email) AS doctor_name, COUNT(*) AS total
         FROM appointments a
-        INNER JOIN users u ON u.id = a.doctor_id
+        INNER JOIN users u ON u.user_id = a.doctor_id
         WHERE DATE(a.appointment_date) BETWEEN %s AND %s
-        GROUP BY u.id
+        GROUP BY u.user_id
         ORDER BY total DESC
         LIMIT 10
     """
@@ -227,16 +211,11 @@ def export_financial_csv():
         FROM invoices
         WHERE status != 'Cancelled'
           AND DATE(created_at) BETWEEN %s AND %s
-        UNION ALL
-        SELECT DATE(sale_date) AS entry_date, sale_id AS ref_id,
-               patient_id, total_amount, 0 AS tax_amount, 0 AS discount_amount, 'Pharmacy' AS source
-        FROM pharmacy_sales
-        WHERE DATE(sale_date) BETWEEN %s AND %s
         ORDER BY entry_date ASC
     """
 
     with get_db_cursor(dictionary=True) as (_conn, cursor):
-        cursor.execute(ledger_query, (start_date, end_date, start_date, end_date))
+        cursor.execute(ledger_query, (start_date, end_date))
         rows = cursor.fetchall() or []
 
     output = StringIO()

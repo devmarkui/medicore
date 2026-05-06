@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  :root { --teal:#0d9488; }
+  .edit-wrap { padding:24px 32px; max-width:860px; margin:0 auto; }
+  .breadcrumb { font-size:11px; color:#94a3b8; font-weight:600; margin-bottom:16px; }
+  .breadcrumb a { color:var(--teal); text-decoration:none; }
+  .breadcrumb a:hover { text-decoration:underline; }
+
+  .page-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; overflow:hidden; }
+  .page-hdr  { padding:20px 28px; border-bottom:1px solid #f1f5f9; background:#f8fafc;
+               display:flex; align-items:center; justify-content:space-between; }
+  .page-title { font-size:18px; font-weight:900; color:#0f172a; }
+  .page-sub   { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
+  .page-body  { padding:28px; }
+
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .form-full { grid-column:1/-1; }
+  .section-divider {
+    grid-column:1/-1; border:none; border-top:1px solid #f1f5f9;
+    margin:6px 0; padding-top:6px;
+  }
+  .section-title {
+    grid-column:1/-1; font-size:10px; font-weight:800; text-transform:uppercase;
+    letter-spacing:.07em; color:#475569; margin-top:4px;
+  }
+
+  .fld-label { font-size:10px; font-weight:800; text-transform:uppercase;
+               letter-spacing:.07em; color:#64748b; margin-bottom:6px; display:block; }
+  .fld-input { width:100%; border:1px solid #e2e8f0; border-radius:8px;
+               padding:10px 12px; font-size:13px; font-weight:600; outline:none;
+               transition:border-color .12s; box-sizing:border-box; }
+  .fld-input:focus { border-color:var(--teal); }
+  .fld-select { width:100%; border:1px solid #e2e8f0; border-radius:8px;
+                padding:10px 12px; font-size:13px; font-weight:600; outline:none;
+                background:#fff; box-sizing:border-box; }
+
+  .btn-row { display:flex; gap:10px; margin-top:24px; }
+  .btn-save  { flex:1; background:#0f172a; color:#fff; padding:12px; border-radius:10px;
+               font-size:13px; font-weight:800; border:none; cursor:pointer; transition:background .12s; }
+  .btn-save:hover { background:var(--teal); }
+  .btn-cancel { padding:12px 20px; border-radius:10px; font-size:13px; font-weight:700;
+                background:#f1f5f9; color:#475569; border:1px solid #e2e8f0;
+                text-decoration:none; display:inline-flex; align-items:center;
+                cursor:pointer; transition:all .12s; }
+  .btn-cancel:hover { background:#e2e8f0; }
+
+  .warn-box { background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;
+              padding:10px 14px; font-size:11px; font-weight:700; color:#d97706;
+              margin-bottom:20px; display:flex; align-items:center; gap:8px; }
+</style>
+
+<div class="edit-wrap">
+
+  <div class="breadcrumb">
+    <a href="{{ url_for('inventory.inventory_dashboard') }}">Dashboard</a> ›
+    <a href="{{ url_for('inventory.manage_items') }}">Manage Items</a> ›
+    <a href="{{ url_for('inventory.item_detail', item_id=item.item_id) }}">{{ item.item_name }}</a> ›
+    Edit
+  </div>
+
+  <div class="page-card">
+    <div class="page-hdr">
+      <div>
+        <div class="page-title">✏ Edit Item</div>
+        <div class="page-sub">{{ item.item_name }} · {{ item.item_code }}</div>
+      </div>
+      <a href="{{ url_for('inventory.item_detail', item_id=item.item_id) }}"
+         style="font-size:11px;font-weight:700;color:#64748b;text-decoration:none;">
+        ← Cancel
+      </a>
+    </div>
+    <div class="page-body">
+
+      <div class="warn-box">
+        ⚠ Changing stock levels here does NOT create a transaction record. Use Stock In / Adjust for stock movements.
+      </div>
+
+      <form action="{{ url_for('inventory.edit_item_save', item_id=item.item_id) }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-grid">
+
+          <div class="section-title">Basic Information</div>
+
+          <div class="form-full">
+            <label class="fld-label">Item Name *</label>
+            <input class="fld-input" type="text" name="item_name" required value="{{ item.item_name }}">
+          </div>
+          <div>
+            <label class="fld-label">Item Code *</label>
+            <input class="fld-input" type="text" name="item_code" required value="{{ item.item_code }}">
+          </div>
+          <div>
+            <label class="fld-label">Generic Name</label>
+            <input class="fld-input" type="text" name="generic_name" value="{{ item.generic_name or '' }}">
+          </div>
+
+          <hr class="section-divider">
+          <div class="section-title">Classification</div>
+
+          <div>
+            <label class="fld-label">Category *</label>
+            <select class="fld-select" name="category" required>
+              {% for cat in categories %}
+              <option value="{{ cat.category_name }}"
+                {% if cat.category_name == item.category %}selected{% endif %}>
+                {{ cat.category_name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Unit of Measure</label>
+            <select class="fld-select" name="unit">
+              {% for u in ['pcs','box','vial','ml','mg','strip','roll'] %}
+              <option value="{{ u }}" {% if u == item.unit %}selected{% endif %}>{{ u }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Usage Mode</label>
+            <select class="fld-select" name="usage_mode">
+              {% for m in ['Internal','Sale','Both'] %}
+              <option value="{{ m }}" {% if m == item.usage_mode %}selected{% endif %}>{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Status</label>
+            <select class="fld-select" name="status">
+              <option value="Active" {% if item.status == 'Active' %}selected{% endif %}>Active</option>
+              <option value="Inactive" {% if item.status == 'Inactive' %}selected{% endif %}>Inactive</option>
+            </select>
+          </div>
+
+          <hr class="section-divider">
+          <div class="section-title">Pricing & Levels</div>
+
+          <div>
+            <label class="fld-label">Buying Price (LKR)</label>
+            <input class="fld-input" type="number" step="0.01" name="buying_price"
+                   value="{{ item.buying_price or 0 }}">
+          </div>
+          <div>
+            <label class="fld-label">Selling Price (LKR)</label>
+            <input class="fld-input" type="number" step="0.01" name="selling_price"
+                   value="{{ item.selling_price or 0 }}">
+          </div>
+          <div>
+            <label class="fld-label">Reorder Level (Min)</label>
+            <input class="fld-input" type="number" name="minimum_stock_level"
+                   value="{{ item.minimum_stock_level }}">
+          </div>
+          <div>
+            <label class="fld-label">Max Stock Level</label>
+            <input class="fld-input" type="number" name="max_stock_level"
+                   value="{{ item.max_stock_level or '' }}" placeholder="Optional">
+          </div>
+
+          <hr class="section-divider">
+          <div class="section-title">Supplier & Storage</div>
+
+          <div>
+            <label class="fld-label">Supplier</label>
+            <select class="fld-select" name="supplier_id">
+              <option value="">— None —</option>
+              {% for s in suppliers %}
+              <option value="{{ s.supplier_id }}"
+                {% if s.supplier_id == item.supplier_id %}selected{% endif %}>
+                {{ s.supplier_name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Storage Location</label>
+            <input class="fld-input" type="text" name="storage_location"
+                   value="{{ item.storage_location or '' }}" placeholder="e.g. Shelf A3">
+          </div>
+
+          <div class="form-full" style="display:flex;gap:20px;align-items:center;
+               padding:12px;background:#f8fafc;border-radius:8px;margin-top:4px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;
+                          font-size:12px;font-weight:700;color:#475569;">
+              <input type="checkbox" name="track_expiry"
+                     {% if item.track_expiry %}checked{% endif %}> Track Expiry Date
+            </label>
+          </div>
+
+        </div>
+
+        <div class="btn-row">
+          <a href="{{ url_for('inventory.item_detail', item_id=item.item_id) }}" class="btn-cancel">← Cancel</a>
+          <button type="submit" class="btn-save">✓ Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

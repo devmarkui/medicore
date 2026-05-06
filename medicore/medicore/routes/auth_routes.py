@@ -39,23 +39,22 @@ def login_post():
         flash("Invalid request token. Please try again.", "error")
         return redirect(url_for("auth.login"))
 
-    username = (request.form.get("username") or "").strip()
+    email = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
 
-    if not username or not password:
-        flash("Username and password are required.", "error")
+    if not email or not password:
+        flash("Email and password are required.", "error")
         return redirect(url_for("auth.login"))
 
     query = """
-        SELECT u.id, u.username, u.password_hash, u.is_2fa_enabled, r.role_name
-        FROM users u
-        INNER JOIN roles r ON r.id = u.role_id
-        WHERE u.username = %s AND u.is_active = 1
+        SELECT user_id, email, full_name, password_hash, is_2fa_enabled, role
+        FROM users
+        WHERE email = %s AND status = 'Active'
         LIMIT 1
     """
 
     with get_db_cursor(dictionary=True) as (_conn, cursor):
-        cursor.execute(query, (username,))
+        cursor.execute(query, (email,))
         user = cursor.fetchone()
 
     if not user or not verify_password(user["password_hash"], password):
@@ -65,17 +64,17 @@ def login_post():
     if user.get("is_2fa_enabled"):
         session.clear()
         session["pending_2fa"] = {
-            "user_id": int(user["id"]),
-            "username": user["username"],
-            "role_name": user["role_name"],
+            "user_id": int(user["user_id"]),
+            "username": user["email"],
+            "role_name": user["role"],
         }
         flash("Enter your 2FA code to finish signing in.", "info")
         return redirect(url_for("auth.verify_2fa_form"))
 
     rotate_session(
-        user_id=user["id"],
-        username=user["username"],
-        role_name=user["role_name"],
+        user_id=user["user_id"],
+        username=user["email"],
+        role_name=user["role"],
     )
     flash("Login successful.", "success")
     return redirect(url_for("dashboard.dashboard"))
@@ -86,9 +85,9 @@ def login_post():
 def setup_2fa():
     user_id = session.get("user_id")
     query = """
-        SELECT id, username, two_factor_secret, is_2fa_enabled
+        SELECT user_id, email, two_factor_secret, is_2fa_enabled
         FROM users
-        WHERE id = %s
+        WHERE user_id = %s
         LIMIT 1
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
@@ -101,12 +100,12 @@ def setup_2fa():
         secret = user.get("two_factor_secret") or pyotp.random_base32()
         if not user.get("two_factor_secret"):
             cursor.execute(
-                "UPDATE users SET two_factor_secret = %s WHERE id = %s",
+                "UPDATE users SET two_factor_secret = %s WHERE user_id = %s",
                 (secret, user_id),
             )
 
     totp = pyotp.TOTP(secret)
-    otp_uri = totp.provisioning_uri(name=user["username"], issuer_name="MediCore")
+    otp_uri = totp.provisioning_uri(name=user["email"], issuer_name="MediCore")
     qr_data_uri = _generate_qr_data_uri(otp_uri)
 
     return render_template(
@@ -163,7 +162,7 @@ def verify_2fa():
         query = """
             SELECT two_factor_secret
             FROM users
-            WHERE id = %s
+            WHERE user_id = %s
             LIMIT 1
         """
         with get_db_cursor(dictionary=True) as (_conn, cursor):
@@ -180,7 +179,7 @@ def verify_2fa():
                 return redirect(url_for("auth.setup_2fa"))
 
             cursor.execute(
-                "UPDATE users SET is_2fa_enabled = 1 WHERE id = %s",
+                "UPDATE users SET is_2fa_enabled = 1 WHERE user_id = %s",
                 (user_id,),
             )
 
@@ -195,7 +194,7 @@ def verify_2fa():
     query = """
         SELECT two_factor_secret
         FROM users
-        WHERE id = %s AND is_2fa_enabled = 1
+        WHERE user_id = %s AND is_2fa_enabled = 1
         LIMIT 1
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):

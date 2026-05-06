@@ -133,9 +133,9 @@ def _load_patient_profile(patient_id: str) -> dict | None:
 def _load_vitals(patient_id: str) -> list[dict]:
     vitals_query = """
         SELECT v.blood_pressure, v.heart_rate, v.temperature, v.weight_kg, v.height_cm,
-               v.record_date, COALESCE(u.full_name, u.username) AS recorded_by
+               v.record_date, COALESCE(u.full_name, u.email) AS recorded_by
         FROM patient_vitals v
-        LEFT JOIN users u ON u.id = v.recorded_by
+        LEFT JOIN users u ON u.user_id = v.recorded_by
         WHERE v.patient_id = %s
         ORDER BY v.record_date DESC
         LIMIT 15
@@ -148,9 +148,9 @@ def _load_vitals(patient_id: str) -> list[dict]:
 def _load_consultations(patient_id: str) -> list[dict]:
     consultations_query = """
         SELECT c.consultation_id, c.consultation_date, c.chief_complaint, c.diagnosis,
-               c.clinical_notes, COALESCE(u.full_name, u.username) AS doctor_name
+               c.clinical_notes, COALESCE(u.full_name, u.email) AS doctor_name
         FROM consultations c
-        LEFT JOIN users u ON u.id = c.doctor_id
+        LEFT JOIN users u ON u.user_id = c.doctor_id
         WHERE c.patient_id = %s
         ORDER BY c.consultation_date DESC
         LIMIT 20

@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  :root { --teal:#0d9488; --amber:#d97706; }
+  .adj-wrap { padding:24px 32px; max-width:760px; margin:0 auto; }
+  .breadcrumb { font-size:11px; color:#94a3b8; font-weight:600; margin-bottom:16px; }
+  .breadcrumb a { color:var(--teal); text-decoration:none; }
+  .breadcrumb a:hover { text-decoration:underline; }
+
+  .page-card { background:#fff; border:1px solid #e2e8f0; border-radius:14px; overflow:hidden; }
+  .page-hdr  { padding:20px 28px; border-bottom:1px solid #f1f5f9;
+               background:linear-gradient(135deg,#fff7ed 0%,#fffbeb 100%);
+               display:flex; align-items:center; gap:16px; }
+  .hdr-icon  { width:48px; height:48px; border-radius:12px; background:var(--amber);
+               display:flex; align-items:center; justify-content:center;
+               font-size:22px; color:#fff; flex-shrink:0; }
+  .page-title { font-size:18px; font-weight:900; color:#0f172a; }
+  .page-sub   { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
+  .page-body  { padding:28px; }
+
+  /* item banner */
+  .item-banner { background:#fff7ed; border:1px solid #fed7aa; border-radius:10px;
+                 padding:14px 18px; margin-bottom:24px;
+                 display:flex; align-items:center; justify-content:space-between; }
+  .ib-name { font-size:14px; font-weight:800; color:#0f172a; }
+  .ib-meta { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
+  .ib-stock { font-size:22px; font-weight:900; color:var(--amber); }
+  .ib-stock-label { font-size:9px; font-weight:800; text-transform:uppercase;
+                    letter-spacing:.07em; color:#94a3b8; }
+
+  /* type toggle */
+  .type-toggle { display:grid; grid-template-columns:repeat(3,1fr); gap:0;
+                 background:#f8fafc; border-radius:10px; padding:4px;
+                 border:1px solid #e2e8f0; margin-bottom:24px; }
+  .type-toggle label { cursor:pointer; }
+  .type-toggle input[type=radio] { display:none; }
+  .type-opt { padding:10px; text-align:center; border-radius:7px;
+              font-size:10px; font-weight:800; text-transform:uppercase;
+              letter-spacing:.06em; color:#94a3b8; transition:all .12s; }
+  .type-toggle input[type=radio]:checked + .type-opt.opt-gen   { background:#fff; color:#0f172a; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .type-toggle input[type=radio]:checked + .type-opt.opt-dam   { background:#fff; color:#ef4444; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .type-toggle input[type=radio]:checked + .type-opt.opt-exp   { background:#fff; color:var(--amber); box-shadow:0 1px 4px rgba(0,0,0,.08); }
+
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .form-full { grid-column:1/-1; }
+  .fld-label { font-size:10px; font-weight:800; text-transform:uppercase;
+               letter-spacing:.07em; color:#64748b; margin-bottom:6px; display:block; }
+  .fld-input { width:100%; border:1px solid #e2e8f0; border-radius:8px;
+               padding:10px 12px; font-size:13px; font-weight:600; outline:none;
+               transition:border-color .12s; box-sizing:border-box; }
+  .fld-input:focus { border-color:var(--teal); }
+  .fld-select { width:100%; border:1px solid #e2e8f0; border-radius:8px;
+                padding:10px 12px; font-size:13px; font-weight:600;
+                outline:none; background:#fff; box-sizing:border-box; }
+  .qty-input { font-size:28px !important; font-weight:900 !important;
+               color:var(--amber) !important; text-align:center; }
+  .hint { font-size:10px; font-weight:600; color:#94a3b8; margin-top:5px; }
+
+  .btn-row { display:flex; gap:10px; margin-top:24px; }
+  .btn-submit { flex:1; background:var(--amber); color:#fff; padding:13px; border-radius:10px;
+                font-size:14px; font-weight:800; border:none; cursor:pointer; transition:background .12s; }
+  .btn-submit:hover { background:#b45309; }
+  .btn-cancel { padding:13px 20px; border-radius:10px; font-size:13px; font-weight:700;
+                background:#f1f5f9; color:#475569; border:1px solid #e2e8f0;
+                text-decoration:none; display:inline-flex; align-items:center; }
+  .btn-cancel:hover { background:#e2e8f0; }
+</style>
+
+<div class="adj-wrap">
+  <div class="breadcrumb">
+    <a href="{{ url_for('inventory.inventory_dashboard') }}">Dashboard</a> ›
+    <a href="{{ url_for('inventory.manage_items') }}">Manage Items</a> ›
+    Adjust Stock
+  </div>
+
+  <div class="page-card">
+    <div class="page-hdr">
+      <div class="hdr-icon">⚖</div>
+      <div>
+        <div class="page-title">Adjust Stock</div>
+        <div class="page-sub">Correct stock levels — damage, expiry, audit discrepancy</div>
+      </div>
+    </div>
+    <div class="page-body">
+
+      {% if selected_item %}
+      <div class="item-banner">
+        <div>
+          <div class="ib-name">{{ selected_item.item_name }}</div>
+          <div class="ib-meta">{{ selected_item.item_code }} · {{ selected_item.unit }}</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="ib-stock">{{ selected_item.quantity_on_hand }}</div>
+          <div class="ib-stock-label">current stock</div>
+        </div>
+      </div>
+      {% endif %}
+
+      <form action="{{ url_for('inventory.adjust_submit') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+        <!-- Adjustment Type -->
+        <div class="type-toggle">
+          <label>
+            <input type="radio" name="adjustment_type" value="ADJUST" checked>
+            <div class="type-opt opt-gen">⚙ General</div>
+          </label>
+          <label>
+            <input type="radio" name="adjustment_type" value="DAMAGE">
+            <div class="type-opt opt-dam">💥 Damage</div>
+          </label>
+          <label>
+            <input type="radio" name="adjustment_type" value="EXPIRED">
+            <div class="type-opt opt-exp">⏰ Expired</div>
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-full">
+            <label class="fld-label">Select Item *</label>
+            <select class="fld-select" name="item_id" required
+                    onchange="updateUnit(this)">
+              <option value="">— Choose an item —</option>
+              {% for i in items %}
+              <option value="{{ i.item_id }}"
+                data-unit="{{ i.unit }}"
+                data-stock="{{ i.quantity_on_hand }}"
+                {% if selected_item and selected_item.item_id == i.item_id %}selected{% endif %}>
+                {{ i.item_name }} ({{ i.item_code }}) — Stock: {{ i.quantity_on_hand }} {{ i.unit }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-full">
+            <label class="fld-label">Adjustment Quantity *</label>
+            <div style="position:relative;">
+              <input class="fld-input qty-input" type="number" name="adjustment_qty"
+                     step="0.1" required placeholder="0.0" id="adjQtyInput">
+              <span id="unitLabel2" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);
+                   font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.07em;">
+                {% if selected_item %}{{ selected_item.unit }}{% else %}unit{% endif %}
+              </span>
+            </div>
+            <div class="hint">
+              Use <strong>negative values</strong> (e.g. −10) to remove stock.
+              Use <strong>positive values</strong> (e.g. +5) to add stock.
+            </div>
+          </div>
+
+          <div class="form-full">
+            <label class="fld-label">Reason / Audit Note *</label>
+            <textarea class="fld-input" name="reason" rows="3" required
+                      placeholder="Why is this adjustment being made? (required for audit trail)"
+                      style="resize:vertical;"></textarea>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <a href="{{ url_for('inventory.manage_items') }}" class="btn-cancel">← Cancel</a>
+          <button type="submit" class="btn-submit">⚖ Save Adjustment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function updateUnit(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('unitLabel2').textContent = opt.dataset.unit || 'unit';
+  }
+</script>
+{% endblock %}

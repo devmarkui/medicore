@@ -139,7 +139,6 @@ PROCEDURES (2 items)
 
 RECEPTIONIST:
 ✓ Reception Desk: http://127.0.0.1:5001/appointments/reception-desk
-✓ Channeling Desk (old): http://127.0.0.1:5001/appointments/channeling-desk
 
 ADMIN:
 ✓ Services Manager: http://127.0.0.1:5001/settings/services

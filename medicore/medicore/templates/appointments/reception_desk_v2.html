@@ -295,6 +295,7 @@ document.addEventListener('DOMContentLoaded', function() {
     patient: null,
     categories: [],
     allItems: [],
+    inventoryItems: [],
     currentCategory: 0,
     cart: [],
     doctors: [],
@@ -340,13 +341,13 @@ document.addEventListener('DOMContentLoaded', function() {
         fetch('/appointments/api/services/all'),
         fetch('/appointments/api/doctors?active=true')
       ]);
-      const catData  = await catRes.json();
-      const itemData = await itemRes.json();
-      const docData  = await docRes.json();
+      const catData   = await catRes.json();
+      const itemData  = await itemRes.json();
+      const docData   = await docRes.json();
 
-      state.categories = catData.categories || [];
-      state.allItems   = itemData.items || [];
-      state.doctors    = docData.doctors || [];
+      state.categories    = catData.categories || [];
+      state.allItems      = itemData.items || [];
+      state.doctors       = docData.doctors || [];
 
       renderTabs();
       renderItems();
@@ -400,7 +401,7 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     try {
-      const res = await fetch(`/appointments/channeling-desk/doctor-meta?doctor_id=${doctorId}&date=${dateVal}`);
+      const res = await fetch(`/appointments/api/doctor-meta?doctor_id=${doctorId}&date=${dateVal}`);
       const data = await res.json();
       if (data.ok) {
         state.doctorMeta = data;
@@ -417,6 +418,8 @@ document.addEventListener('DOMContentLoaded', function() {
     existing.forEach(t => t.remove());
 
     state.categories.forEach(cat => {
+      // Skip "All Services" — it's already the hardcoded first tab
+      if (cat.category_name.toLowerCase() === 'all services') return;
       const btn = document.createElement('button');
       btn.className = 'mc-tab';
       btn.textContent = cat.category_name.toUpperCase();
@@ -442,34 +445,38 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // ── SERVICE ITEMS ──
   function renderItems() {
     const q = serviceSearch.value.toLowerCase();
     serviceGrid.innerHTML = '';
 
     const filtered = state.allItems.filter(item => {
-      const catOk = state.currentCategory === 0 || parseInt(item.category_id) === state.currentCategory;
-      const qOk   = item.item_name.toLowerCase().includes(q) || (item.item_code || '').toLowerCase().includes(q);
+      const catOk = (state.currentCategory === 0 || parseInt(item.category_id) === state.currentCategory);
+      const qOk = item.item_name.toLowerCase().includes(q) || (item.item_code || '').toLowerCase().includes(q);
       return catOk && qOk;
     });
 
     if (filtered.length === 0) {
-      serviceGrid.innerHTML = '<div class="col-span-full flex items-center justify-center text-slate-300 py-16"><p class="text-xs font-semibold">No services found</p></div>';
+      serviceGrid.innerHTML = `<div class="col-span-full flex flex-col items-center justify-center text-slate-300 py-16"><p class="text-xs font-semibold text-center">No items found</p></div>`;
       return;
     }
 
     filtered.forEach(item => {
       const card = document.createElement('div');
       card.className = 'svc-card';
+
       card.innerHTML = `
         <div class="flex justify-between items-start mb-1.5">
           <span class="text-[9px] font-black uppercase" style="color:var(--mc-600);">${item.category_name || ''}</span>
           <span class="text-[9px] font-bold text-slate-300 font-mono">${item.item_code || ''}</span>
         </div>
         <h4 class="text-[11px] font-bold text-slate-700 mb-2 leading-snug">${item.item_name}</h4>
-        <div class="text-xs font-black text-slate-800">LKR ${parseFloat(item.price).toFixed(2)}</div>
+        <div class="flex items-center justify-between mt-auto">
+          <div class="text-xs font-black text-slate-800">LKR ${parseFloat(item.price).toFixed(2)}</div>
+        </div>
       `;
-      card.addEventListener('click', () => addToCart(item));
+      card.addEventListener('click', () => {
+        addToCart(item, item.type || 'service');
+      });
       serviceGrid.appendChild(card);
     });
   }
@@ -477,10 +484,42 @@ document.addEventListener('DOMContentLoaded', function() {
   serviceSearch.addEventListener('input', renderItems);
 
   // ── CART ──
-  function addToCart(item) {
-    const ex = state.cart.find(c => c.item_id === item.item_id);
-    if (ex) { ex.quantity++; } else {
-      state.cart.push({ item_id: item.item_id, item_code: item.item_code || '', item_name: item.item_name, price: parseFloat(item.price), quantity: 1 });
+  function addToCart(item, type = 'service') {
+    const isInventory = (type === 'inventory');
+    const itemKey = isInventory ? `inv-${item.item_id}` : `svc-${item.item_id}`;
+    
+    const ex = state.cart.find(c => (isInventory ? c.inventory_item_id : c.service_item_id) === item.item_id);
+    
+    if (ex) {
+      if (isInventory) {
+        if (ex.quantity >= item.stock) {
+          alert(`Insufficient stock for ${item.item_name}. Only ${item.stock} available.`);
+          return;
+        }
+      }
+      ex.quantity++;
+    } else {
+      if (isInventory && item.stock < 1) {
+          alert('This item is out of stock.');
+          return;
+      }
+      const cartItem = {
+        item_id: item.item_id, // For legacy / general use
+        item_code: item.item_code || '',
+        item_name: item.item_name,
+        price: parseFloat(item.price),
+        quantity: 1,
+        type: type
+      };
+      
+      if (isInventory) {
+        cartItem.inventory_item_id = item.item_id;
+        cartItem.max_stock = item.stock;
+      } else {
+        cartItem.service_item_id = item.item_id;
+      }
+      
+      state.cart.push(cartItem);
     }
     updateCartUI();
   }
@@ -522,11 +561,17 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!btn) return;
     const idx = parseInt(btn.dataset.idx);
     const action = btn.dataset.action;
+    const cartItem = state.cart[idx];
+    
     if (action === 'dec') {
-      state.cart[idx].quantity--;
-      if (state.cart[idx].quantity < 1) state.cart.splice(idx, 1);
+      cartItem.quantity--;
+      if (cartItem.quantity < 1) state.cart.splice(idx, 1);
     } else if (action === 'inc') {
-      state.cart[idx].quantity++;
+      if (cartItem.type === 'inventory' && cartItem.quantity >= cartItem.max_stock) {
+        alert(`Insufficient stock. Max available: ${cartItem.max_stock}`);
+        return;
+      }
+      cartItem.quantity++;
     } else if (action === 'remove') {
       state.cart.splice(idx, 1);
     }
@@ -594,7 +639,7 @@ document.addEventListener('DOMContentLoaded', function() {
   async function lookupPatient(phone) {
     $('loadingPatient').classList.remove('hidden');
     try {
-      const res = await fetch(`/appointments/channeling-desk/patient-lookup?phone=${phone}`);
+      const res = await fetch(`/appointments/api/patient-lookup?phone=${phone}`);
       const data = await res.json();
       if (data.ok && data.patients && data.patients.length > 0) {
         fillPatient(data.patients[0]);

@@ -1,0 +1,337 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  :root {
+    --teal: #0d9488; --teal-bg: #f0fdfa; --teal-border: #99f6e4;
+    --red: #ef4444;  --amber: #f59e0b; --blue: #3b82f6;
+    --green: #10b981;
+  }
+  .mi-wrap   { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+  .mi-hdr    { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
+  .mi-title  { font-size:22px; font-weight:900; color:#0f172a; }
+  .mi-sub    { font-size:11px; color:#64748b; font-weight:600; margin-top:2px; }
+
+  /* toolbar */
+  .toolbar   { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .search-in { font-size:12px; border:1px solid #e2e8f0; border-radius:8px;
+               padding:8px 12px; width:260px; outline:none; }
+  .search-in:focus { border-color:#94a3b8; }
+  .cat-sel   { font-size:12px; border:1px solid #e2e8f0; border-radius:8px;
+               padding:8px 12px; outline:none; background:#fff; }
+  .btn-add   { font-size:12px; font-weight:700; padding:8px 18px; border-radius:8px;
+               background:#0f172a; color:#fff; border:none; cursor:pointer;
+               display:flex; align-items:center; gap:6px; transition:background .12s; }
+  .btn-add:hover { background:var(--teal); }
+
+  /* table */
+  .tbl-card  { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+  .mi-table  { width:100%; border-collapse:collapse; font-size:12px; }
+  .mi-table thead th {
+    font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em;
+    color:#94a3b8; background:#f8fafc; padding:10px 14px; text-align:left;
+    border-bottom:1px solid #f1f5f9; white-space:nowrap;
+  }
+  .mi-table tbody tr { border-bottom:1px solid #f8fafc; transition:background .1s; }
+  .mi-table tbody tr:hover { background:#fafbfc; }
+  .mi-table tbody tr:last-child { border-bottom:none; }
+  .mi-table tbody td { padding:10px 14px; color:#334155; vertical-align:middle; }
+  .item-name { font-weight:700; color:#0f172a; font-size:13px; }
+  .item-code { font-size:10px; color:#94a3b8; font-family:monospace; }
+
+  .stock-chip  { display:inline-flex; align-items:center; font-size:11px; font-weight:800;
+                 padding:2px 8px; border-radius:4px; }
+  .sc-oos { background:#fef2f2; color:#ef4444; border:1px solid #fecaca; }
+  .sc-low { background:#fff7ed; color:#f97316; border:1px solid #fed7aa; }
+  .sc-ok  { background:#ecfdf5; color:#10b981; border:1px solid #a7f3d0; }
+
+  .status-active   { font-size:10px; font-weight:700; color:#10b981; }
+  .status-inactive { font-size:10px; font-weight:700; color:#94a3b8; }
+
+  /* action buttons */
+  .act-btn { font-size:10px; font-weight:700; padding:4px 10px; border-radius:5px;
+             border:none; cursor:pointer; text-decoration:none; display:inline-block;
+             transition:all .12s; }
+  .act-view  { background:#eff6ff; color:#3b82f6; }
+  .act-view:hover { background:#dbeafe; }
+  .act-edit  { background:#f1f5f9; color:#475569; }
+  .act-edit:hover { background:#e2e8f0; }
+  .act-in    { background:#ecfdf5; color:#059669; }
+  .act-in:hover { background:#d1fae5; }
+  .act-adj   { background:#fff7ed; color:#d97706; }
+  .act-adj:hover { background:#fde68a; }
+
+  /* modal */
+  .modal-bg  { display:none; position:fixed; inset:0; z-index:200;
+               background:rgba(15,23,42,.55); backdrop-filter:blur(4px);
+               align-items:center; justify-content:center; padding:20px; }
+  .modal-bg.open { display:flex; }
+  .modal-box { background:#fff; border-radius:16px; width:100%; max-width:700px;
+               max-height:90vh; overflow-y:auto; box-shadow:0 25px 60px rgba(0,0,0,.18); }
+  .modal-hdr { display:flex; align-items:center; justify-content:space-between;
+               padding:20px 24px; border-bottom:1px solid #f1f5f9; background:#f8fafc;
+               border-radius:16px 16px 0 0; }
+  .modal-title { font-size:16px; font-weight:900; color:#0f172a; }
+  .modal-close { width:32px; height:32px; border-radius:8px; border:1px solid #e2e8f0;
+                 background:#fff; cursor:pointer; font-size:18px; color:#64748b;
+                 display:flex; align-items:center; justify-content:center; transition:all .12s; }
+  .modal-close:hover { background:#fef2f2; border-color:#fecaca; color:#ef4444; }
+  .modal-body { padding:24px; }
+
+  /* form grid */
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .form-full { grid-column:1/-1; }
+  .fld-label { font-size:10px; font-weight:800; text-transform:uppercase;
+               letter-spacing:.07em; color:#64748b; margin-bottom:6px; display:block; }
+  .fld-input { width:100%; border:1px solid #e2e8f0; border-radius:8px;
+               padding:9px 12px; font-size:13px; font-weight:600; outline:none;
+               transition:border-color .12s; box-sizing:border-box; }
+  .fld-input:focus { border-color:var(--teal); }
+  .fld-select { width:100%; border:1px solid #e2e8f0; border-radius:8px;
+                padding:9px 12px; font-size:13px; font-weight:600; outline:none;
+                background:#fff; box-sizing:border-box; }
+  .section-label { font-size:10px; font-weight:800; text-transform:uppercase;
+                   letter-spacing:.07em; color:#475569; margin:8px 0 4px;
+                   grid-column:1/-1; border-top:1px solid #f1f5f9; padding-top:12px; }
+  .submit-btn { width:100%; background:#0f172a; color:#fff; padding:12px;
+                border-radius:10px; font-size:13px; font-weight:800; border:none;
+                cursor:pointer; transition:background .12s; margin-top:20px; }
+  .submit-btn:hover { background:var(--teal); }
+
+  .empty-state { padding:40px; text-align:center; color:#94a3b8; font-size:12px; font-weight:600; }
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-thumb { background:#e2e8f0; border-radius:4px; }
+</style>
+
+<div class="mi-wrap">
+
+  <!-- Header -->
+  <div class="mi-hdr">
+    <div>
+      <div class="mi-title">📦 Manage Inventory Items</div>
+      <div class="mi-sub">Full item registry — add, edit, view stock history</div>
+    </div>
+    <a href="{{ url_for('inventory.inventory_dashboard') }}" style="font-size:11px;font-weight:700;color:#64748b;text-decoration:none;">
+      ← Back to Dashboard
+    </a>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <input id="miSearch" type="text" class="search-in" placeholder="Search name, code, category…"
+           oninput="miSearch(this.value)">
+    <select id="catFilter" class="cat-sel" onchange="miSearch(document.getElementById('miSearch').value)">
+      <option value="">All Categories</option>
+      {% for cat in categories %}
+      <option value="{{ cat.category_name | lower }}">{{ cat.category_name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn-add" onclick="openAddModal()">
+      ＋ Add New Item
+    </button>
+    <a href="{{ url_for('inventory.stock_in_page') }}" class="btn-add" style="background:#059669; margin-left:auto;">
+      📥 Stock In
+    </a>
+    <a href="{{ url_for('inventory.adjust_page') }}" class="btn-add" style="background:#d97706;">
+      ⚖ Adjust Stock
+    </a>
+  </div>
+
+  <!-- Table -->
+  <div class="tbl-card">
+    <table class="mi-table" id="miTable">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Category</th>
+          <th>Stock</th>
+          <th>Unit</th>
+          <th>Selling Price</th>
+          <th>Expiry</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="miBody">
+        {% for item in items %}
+        {% set is_oos = item.quantity_on_hand <= 0 %}
+        {% set is_low = item.quantity_on_hand > 0 and item.quantity_on_hand <= item.minimum_stock_level %}
+        <tr class="mi-row"
+            data-name="{{ item.item_name | lower }}"
+            data-code="{{ item.item_code | lower }}"
+            data-cat="{{ item.category | lower }}">
+          <td>
+            <div class="item-name">{{ item.item_name }}</div>
+            <div class="item-code">{{ item.item_code }}</div>
+          </td>
+          <td style="font-size:11px;color:#64748b;">{{ item.category }}</td>
+          <td>
+            <span class="stock-chip {% if is_oos %}sc-oos{% elif is_low %}sc-low{% else %}sc-ok{% endif %}">
+              {{ item.quantity_on_hand }}
+            </span>
+          </td>
+          <td style="font-size:11px;color:#64748b;">{{ item.unit }}</td>
+          <td style="font-size:12px;font-weight:700;color:#0f172a;">
+            {% if item.selling_price %}LKR {{ "%.2f"|format(item.selling_price) }}{% else %}—{% endif %}
+          </td>
+          <td style="font-size:11px;color:{% if item.expiry_date %}#3b82f6{% else %}#94a3b8{% endif %};">
+            {% if item.expiry_date %}{{ item.expiry_date }}{% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="{% if item.status == 'Active' %}status-active{% else %}status-inactive{% endif %}">
+              {{ item.status }}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;">
+              <a href="{{ url_for('inventory.item_detail', item_id=item.item_id) }}" class="act-btn act-view">View</a>
+              <a href="{{ url_for('inventory.edit_item_form', item_id=item.item_id) }}" class="act-btn act-edit">Edit</a>
+              <a href="{{ url_for('inventory.stock_in_page', item_id=item.item_id) }}" class="act-btn act-in">Stock In</a>
+              <a href="{{ url_for('inventory.adjust_page', item_id=item.item_id) }}" class="act-btn act-adj">Adjust</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not items %}
+    <div class="empty-state">No inventory items found. Add your first item above.</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── ADD ITEM MODAL ── -->
+<div id="addModal" class="modal-bg" onclick="if(event.target===this)closeAddModal()">
+  <div class="modal-box">
+    <div class="modal-hdr">
+      <div class="modal-title">➕ Add New Inventory Item</div>
+      <button class="modal-close" onclick="closeAddModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form action="{{ url_for('inventory.add_item') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-grid">
+
+          <div class="section-label">Basic Information</div>
+
+          <div class="form-full">
+            <label class="fld-label">Item Name <span style="color:#ef4444">*</span></label>
+            <input class="fld-input" type="text" name="item_name" required
+                   placeholder="e.g. Paracetamol 500mg Tablet">
+          </div>
+          <div>
+            <label class="fld-label">Item Code <span style="color:#ef4444">*</span></label>
+            <input class="fld-input" type="text" name="item_code" required placeholder="INV-MED-001">
+          </div>
+          <div>
+            <label class="fld-label">Generic Name</label>
+            <input class="fld-input" type="text" name="generic_name" placeholder="e.g. Acetaminophen">
+          </div>
+          <div>
+            <label class="fld-label">Brand Name</label>
+            <input class="fld-input" type="text" name="brand_name" placeholder="e.g. Panadol">
+          </div>
+          <div>
+            <label class="fld-label">Category <span style="color:#ef4444">*</span></label>
+            <select class="fld-select" name="category" required>
+              {% for cat in categories %}
+              <option value="{{ cat.category_name }}">{{ cat.category_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="section-label">Stock & Pricing</div>
+
+          <div>
+            <label class="fld-label">Unit of Measure</label>
+            <select class="fld-select" name="unit">
+              <option value="pcs">Pieces (pcs)</option>
+              <option value="box">Box</option>
+              <option value="vial">Vial</option>
+              <option value="ml">Millilitre (ml)</option>
+              <option value="mg">Milligram (mg)</option>
+              <option value="strip">Strip</option>
+              <option value="roll">Roll</option>
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Opening Stock Qty</label>
+            <input class="fld-input" type="number" name="quantity_on_hand" value="0" min="0">
+          </div>
+          <div>
+            <label class="fld-label">Reorder Level (Min)</label>
+            <input class="fld-input" type="number" name="minimum_stock_level" value="10" min="0">
+          </div>
+          <div>
+            <label class="fld-label">Max Stock Level</label>
+            <input class="fld-input" type="number" name="max_stock_level" placeholder="Optional">
+          </div>
+          <div>
+            <label class="fld-label">Buying Price (LKR)</label>
+            <input class="fld-input" type="number" name="buying_price" step="0.01" value="0.00">
+          </div>
+          <div>
+            <label class="fld-label">Selling Price (LKR)</label>
+            <input class="fld-input" type="number" name="selling_price" step="0.01" value="0.00">
+          </div>
+
+          <div class="section-label">Usage & Settings</div>
+
+          <div>
+            <label class="fld-label">Usage Mode</label>
+            <select class="fld-select" name="usage_mode">
+              <option value="Internal">Internal Use</option>
+              <option value="Sale">Direct Sale</option>
+              <option value="Both">Both</option>
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Supplier</label>
+            <select class="fld-select" name="supplier_id">
+              <option value="">— None —</option>
+              {% for s in suppliers %}
+              <option value="{{ s.supplier_id }}">{{ s.supplier_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="fld-label">Batch Number</label>
+            <input class="fld-input" type="text" name="batch_number" placeholder="BT-2024-X">
+          </div>
+          <div>
+            <label class="fld-label">Expiry Date</label>
+            <input class="fld-input" type="date" name="expiry_date">
+          </div>
+          <div class="form-full">
+            <label class="fld-label">Storage Location</label>
+            <input class="fld-input" type="text" name="storage_location" placeholder="e.g. Pharmacy Shelf A3">
+          </div>
+          <div class="form-full" style="display:flex;gap:20px;align-items:center;padding:12px;background:#f8fafc;border-radius:8px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:700;color:#475569;">
+              <input type="checkbox" name="track_expiry" checked> Track Expiry Date
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:700;color:#475569;">
+              <input type="checkbox" name="is_consumable"> Mark as Consumable
+            </label>
+          </div>
+        </div>
+        <button type="submit" class="submit-btn">✓ Register Item</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  function openAddModal()  { document.getElementById('addModal').classList.add('open'); }
+  function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
+
+  function miSearch(q) {
+    const cat = document.getElementById('catFilter').value;
+    q = q.toLowerCase();
+    document.querySelectorAll('.mi-row').forEach(row => {
+      const matchQ = !q || row.dataset.name.includes(q) || row.dataset.code.includes(q) || row.dataset.cat.includes(q);
+      const matchC = !cat || row.dataset.cat === cat;
+      row.style.display = (matchQ && matchC) ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}

@@ -197,6 +197,8 @@ CREATE TABLE invoices (
     patient_id BIGINT UNSIGNED NOT NULL,
     appointment_id BIGINT UNSIGNED,
     subtotal DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    doctor_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    hospital_fee DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     tax_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
     total_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,

@@ -116,7 +116,7 @@
     });
 
     const summary = payload.summary || {};
-    const totalRevenue = (summary.invoice_revenue || 0) + (summary.pharmacy_revenue || 0);
+    const totalRevenue = (summary.invoice_revenue || 0);
     document.getElementById('kpi-revenue').textContent = formatLkr(totalRevenue);
     document.getElementById('kpi-appointments').textContent = payload.operational?.appointments_total || 0;
     document.getElementById('kpi-labs').textContent = payload.clinical?.lab_tests || 0;

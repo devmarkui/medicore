@@ -55,7 +55,7 @@
     <div class="flex gap-10">
       <div>
         <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Total Collection</p>
-        <p class="text-lg font-black text-slate-800">LKR 142,500.00</p>
+        <p id="totalCollection" class="text-lg font-black text-slate-800">LKR 0.00</p>
       </div>
       <div>
         <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pending Bills</p>
@@ -63,7 +63,7 @@
       </div>
       <div>
         <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Cash In Hand</p>
-        <p class="text-lg font-black text-emerald-600">LKR 84,200.00</p>
+        <p id="cashInHand" class="text-lg font-black text-emerald-600">LKR 0.00</p>
       </div>
     </div>
     <div class="flex items-center gap-2">
@@ -257,10 +257,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // ── INIT ──
   async function init() {
+    await fetchSummary();
     await fetchPendingQueue();
     if (state.currentInvoiceId) {
       selectBill(state.currentInvoiceId);
     }
+  }
+
+  // ── FETCH SUMMARY ──
+  async function fetchSummary() {
+    try {
+      const res = await fetch('/billing/api/summary');
+      const data = await res.json();
+      if (data.ok) renderSummary(data.summary);
+    } catch (e) { console.error('Summary error:', e); }
+  }
+
+  function renderSummary(s) {
+    if (!s) return;
+    $('totalCollection').textContent = `LKR ${parseFloat(s.total_collection).toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    $('cashInHand').textContent = `LKR ${parseFloat(s.cash_in_hand).toLocaleString(undefined, {minimumFractionDigits:2})}`;
+    $('pendingCount').textContent = s.pending_count;
   }
 
   // ── FETCH QUEUE ──
@@ -367,6 +384,33 @@ document.addEventListener('DOMContentLoaded', function() {
       list.appendChild(row);
     });
 
+    // ── NEW: Render Doctor & Hospital Fees ──
+    const dFee = parseFloat(invoice.doctor_fee || 0);
+    const hFee = parseFloat(invoice.hospital_fee || 0);
+
+    if (dFee > 0) {
+      const row = document.createElement('tr');
+      row.className = "bg-slate-50/50";
+      row.innerHTML = `
+        <td class="px-4 py-2 font-bold text-med-600 italic">Doctor Channeling Fee</td>
+        <td class="px-4 py-2 text-center text-slate-400">1</td>
+        <td class="px-4 py-2 text-right text-slate-400">${dFee.toFixed(2)}</td>
+        <td class="px-4 py-2 text-right font-black text-med-700">${dFee.toFixed(2)}</td>
+      `;
+      list.appendChild(row);
+    }
+    if (hFee > 0) {
+      const row = document.createElement('tr');
+      row.className = "bg-slate-50/50";
+      row.innerHTML = `
+        <td class="px-4 py-2 font-bold text-med-600 italic">Hospital Service Fee</td>
+        <td class="px-4 py-2 text-center text-slate-400">1</td>
+        <td class="px-4 py-2 text-right text-slate-400">${hFee.toFixed(2)}</td>
+        <td class="px-4 py-2 text-right font-black text-med-700">${hFee.toFixed(2)}</td>
+      `;
+      list.appendChild(row);
+    }
+
     // Totals
     $('viewSubtotal').textContent = `LKR ${parseFloat(invoice.subtotal).toFixed(2)}`;
     $('viewDiscount').textContent = `- LKR ${parseFloat(invoice.discount_amount).toFixed(2)}`;
@@ -389,6 +433,12 @@ document.addEventListener('DOMContentLoaded', function() {
     items.forEach(item => {
       rcptItems.innerHTML += `<div class="flex justify-between"><span>${item.description} x${item.quantity}</span><span class="font-bold">${parseFloat(item.line_total).toFixed(2)}</span></div>`;
     });
+    if (dFee > 0) {
+      rcptItems.innerHTML += `<div class="flex justify-between italic"><span>Doctor Fee</span><span class="font-bold">${dFee.toFixed(2)}</span></div>`;
+    }
+    if (hFee > 0) {
+      rcptItems.innerHTML += `<div class="flex justify-between italic"><span>Hospital Fee</span><span class="font-bold">${hFee.toFixed(2)}</span></div>`;
+    }
   }
 
   window.quickPay = function(val) {
@@ -415,8 +465,11 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       const data = await res.json();
       if (data.ok) {
+        // Update Dashboard Summary
+        renderSummary(data.summary);
+        
         // Success! Reload or update
-        await init();
+        await fetchPendingQueue();
         alert('Payment processed successfully!');
         if (data.status === 'Paid') {
           $('billWorkingArea').classList.add('hidden');

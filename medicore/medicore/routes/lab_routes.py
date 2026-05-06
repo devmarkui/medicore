@@ -12,6 +12,7 @@ from medicore.db.connection import get_db_cursor
 from medicore.security.rbac import login_required, role_required
 from medicore.security.web import generate_csrf_token, validate_csrf_token
 from medicore.communications.communications_service import send_whatsapp_template
+from medicore.inventory.inventory_service import reduce_stock_for_service
 
 lab_bp = Blueprint("lab", __name__, url_prefix="/lab")
 
@@ -72,7 +73,7 @@ def lab_dashboard():
     query = """
         SELECT o.order_id, o.order_date, o.status,
                CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM lab_orders o
         INNER JOIN patients p ON p.patient_id = o.patient_id
     INNER JOIN users u ON u.user_id = o.requesting_doctor_id
@@ -116,6 +117,37 @@ def update_status(order_id: str):
     """
     with get_db_cursor(dictionary=True) as (_conn, cursor):
         cursor.execute(update_query, (new_status, order_id))
+        
+        # --- Inventory Integration ---
+        # 1. Deduct items mapped to 'Sample Collected'
+        if new_status == "Sample Collected" or new_status == "Completed":
+            cursor.execute("SELECT test_id FROM lab_results WHERE order_id = %s", (order_id,))
+            results = cursor.fetchall() or []
+            for r in results:
+                # Deduct consumables used during sampling
+                reduce_stock_for_service(
+                    service_item_id=r['test_id'], 
+                    service_qty=1, 
+                    ref_type='Lab', 
+                    ref_id=order_id, 
+                    stage='on_sample_collection',
+                    user_id=session.get("user_id")
+                )
+
+        # 2. Deduct items mapped to 'Completed' (e.g. reagents)
+        if new_status == "Completed":
+            cursor.execute("SELECT test_id FROM lab_results WHERE order_id = %s", (order_id,))
+            results = cursor.fetchall() or []
+            for r in results:
+                # Deduct lab items used during test processing
+                reduce_stock_for_service(
+                    service_item_id=r['test_id'], 
+                    service_qty=1, 
+                    ref_type='Lab', 
+                    ref_id=order_id, 
+                    stage='on_completion',
+                    user_id=session.get("user_id")
+                )
 
     flash("Lab order status updated.", "success")
     return redirect(url_for("lab.lab_dashboard"))
@@ -129,7 +161,7 @@ def lab_order(order_id: str):
         SELECT o.order_id, o.status, o.order_date, o.patient_id,
                CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
                p.nic_number, p.phone_number,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM lab_orders o
         INNER JOIN patients p ON p.patient_id = o.patient_id
     INNER JOIN users u ON u.user_id = o.requesting_doctor_id

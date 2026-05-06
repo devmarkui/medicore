@@ -8,6 +8,7 @@ from flask import Blueprint, flash, redirect, render_template, request, session,
 from medicore.db.connection import get_db_cursor
 from medicore.security.rbac import login_required, role_required
 from medicore.security.web import generate_csrf_token, validate_csrf_token
+from medicore.inventory.inventory_service import reduce_stock_for_service
 from medicore.utils.timezone import get_colombo_time
 
 billing_bp = Blueprint("billing", __name__, url_prefix="/billing")
@@ -23,6 +24,32 @@ def _now_colombo() -> datetime:
 def _format_lkr(amount: Decimal | float | str) -> str:
     value = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return f"LKR {value:,.2f}"
+
+
+def _calculate_dashboard_summary():
+    """Calculates live totals for the billing workstation dashboard."""
+    # We use a base opening cash as no session management exists yet
+    opening_cash = Decimal("84200.00")
+    
+    query_total = "SELECT SUM(amount_paid) AS total FROM payments WHERE DATE(payment_date) = CURDATE()"
+    query_cash = "SELECT SUM(amount_paid) AS total FROM payments WHERE DATE(payment_date) = CURDATE() AND payment_method = 'Cash'"
+    query_pending = "SELECT COUNT(*) AS total FROM invoices WHERE status IN ('Pending', 'Partial')"
+    
+    with get_db_cursor(dictionary=True) as (_conn, cursor):
+        cursor.execute(query_total)
+        total_coll = cursor.fetchone().get("total") or 0
+        
+        cursor.execute(query_cash)
+        cash_coll = cursor.fetchone().get("total") or 0
+        
+        cursor.execute(query_pending)
+        pending_count = cursor.fetchone().get("total") or 0
+        
+    return {
+        "total_collection": float(total_coll),
+        "cash_in_hand": float(opening_cash + Decimal(str(cash_coll))),
+        "pending_count": int(pending_count)
+    }
 
 
 def _load_tax_rules() -> list[dict]:
@@ -184,6 +211,13 @@ def billing_api_pending():
     return jsonify({"ok": True, "bills": rows})
 
 
+@billing_bp.get("/api/summary")
+@login_required
+@role_required(ALLOWED_ROLES)
+def billing_api_summary():
+    return jsonify({"ok": True, "summary": _calculate_dashboard_summary()})
+
+
 @billing_bp.get("/api/invoice/<invoice_id>")
 @login_required
 @role_required(ALLOWED_ROLES)
@@ -259,7 +293,11 @@ def billing_api_pay(invoice_id: str):
         new_status = "Paid" if total_paid >= total else "Partial"
         cursor.execute("UPDATE invoices SET status = %s WHERE invoice_id = %s", (new_status, real_id))
 
-    return jsonify({"ok": True, "status": new_status})
+    return jsonify({
+        "ok": True, 
+        "status": new_status,
+        "summary": _calculate_dashboard_summary()
+    })
 
 
 @billing_bp.get("/create/<patient_id>")
@@ -451,6 +489,19 @@ def invoice_pay(invoice_id: str):
         new_status = "Partial"
         if total_paid >= total_amount:
             new_status = "Paid"
+            # --- Inventory Stock Reduction (Direct Sales / on_bill items) ---
+            cursor.execute("SELECT service_item_id, quantity FROM invoice_items WHERE invoice_id = %s", (invoice_id,))
+            invoice_items = cursor.fetchall()
+            for item in invoice_items:
+                if item.get('service_item_id'):
+                    reduce_stock_for_service(
+                        service_item_id=item['service_item_id'], 
+                        service_qty=item['quantity'], 
+                        ref_type='Bill', 
+                        ref_id=str(invoice_id), 
+                        stage='on_bill',
+                        user_id=session.get("user_id")
+                    )
         cursor.execute(update_status, (new_status, invoice_id))
 
     flash("Payment recorded successfully.", "success")

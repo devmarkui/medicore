@@ -88,10 +88,10 @@ def _load_departments() -> list[dict]:
 
 def _load_doctors(department_id: str | None = None) -> list[dict]:
     query = """
-        SELECT u.id, COALESCE(u.full_name, u.username) AS doctor_name, u.department_id
+        SELECT u.id, COALESCE(u.full_name, u.email) AS doctor_name, u.department_id
         FROM users u
         INNER JOIN roles r ON r.id = u.role_id
-        WHERE r.role_name = %s AND u.is_active = 1
+        WHERE r.role_name = %s AND u.status = 'Active'
     """
     params = ["Doctor"]
     if department_id:
@@ -184,9 +184,9 @@ def portal_dashboard():
     patient_id = session.get("portal_patient_id")
     upcoming_query = """
         SELECT a.appointment_id, a.appointment_date, a.appointment_time, a.status,
-               a.reason_for_visit, COALESCE(u.full_name, u.username) AS doctor_name
+               a.reason_for_visit, COALESCE(u.full_name, u.email) AS doctor_name
         FROM appointments a
-        INNER JOIN users u ON u.id = a.doctor_id
+        INNER JOIN users u ON u.user_id = a.doctor_id
         WHERE a.patient_id = %s
           AND a.status IN ('Scheduled', 'Checked-In')
           AND a.appointment_date >= CURDATE()
@@ -196,9 +196,9 @@ def portal_dashboard():
 
     history_query = """
         SELECT a.appointment_id, a.appointment_date, a.appointment_time, a.status,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM appointments a
-        INNER JOIN users u ON u.id = a.doctor_id
+        INNER JOIN users u ON u.user_id = a.doctor_id
         WHERE a.patient_id = %s
         ORDER BY a.appointment_date DESC, a.appointment_time DESC
         LIMIT 5
@@ -253,9 +253,9 @@ def portal_records():
 
     prescriptions_query = """
         SELECT p.prescription_id, p.prescription_date, p.general_instructions,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM prescriptions p
-        LEFT JOIN users u ON u.id = p.doctor_id
+        LEFT JOIN users u ON u.user_id = p.doctor_id
         WHERE p.patient_id = %s
         ORDER BY p.prescription_date DESC
         LIMIT 20

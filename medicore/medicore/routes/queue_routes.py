@@ -70,10 +70,10 @@ def queue_manager():
     query = """
         SELECT q.queue_id, q.queue_number, q.status,
                CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM physical_queues q
         INNER JOIN patients p ON p.patient_id = q.patient_id
-        INNER JOIN users u ON u.id = q.doctor_id
+        INNER JOIN users u ON u.user_id = q.doctor_id
     WHERE q.queue_date = %s
         ORDER BY q.queue_number ASC
     """
@@ -122,9 +122,9 @@ def queue_display_data():
     today = _today_colombo()
     query = """
         SELECT q.queue_number, q.status,
-               COALESCE(u.full_name, u.username) AS doctor_name
+               COALESCE(u.full_name, u.email) AS doctor_name
         FROM physical_queues q
-        INNER JOIN users u ON u.id = q.doctor_id
+        INNER JOIN users u ON u.user_id = q.doctor_id
     WHERE q.queue_date = %s AND q.status IN ('Waiting', 'In Consultation')
         ORDER BY q.queue_number ASC
     """

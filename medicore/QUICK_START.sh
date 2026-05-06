@@ -70,7 +70,6 @@ echo "🎨 KEY PAGES:"
 echo "============="
 echo "✓ Reception Desk (Modern UI):  /appointments/reception-desk"
 echo "✓ Settings - Services:         /settings/services"
-echo "✓ Channeling Desk (Old):       /appointments/channeling-desk"
 echo ""
 
 echo "🔗 API ENDPOINTS (For Developers):"

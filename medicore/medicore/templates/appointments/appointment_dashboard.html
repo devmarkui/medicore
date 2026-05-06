@@ -34,7 +34,7 @@
           </div>
         </form>
         {% if not doctor_view %}
-        <a href="{{ url_for('appointments.channeling_desk', date=selected_date, doctor_id=selected_doctor) }}" class="inline-flex items-center justify-center rounded-lg border border-med-600 text-med-700 px-4 py-2 text-sm hover:bg-med-50">Reception Desk</a>
+        <a href="{{ url_for('appointments.reception_desk', date=selected_date, doctor_id=selected_doctor) }}" class="inline-flex items-center justify-center rounded-lg border border-med-600 text-med-700 px-4 py-2 text-sm hover:bg-med-50">Reception Desk</a>
         {% endif %}
       </div>
     </div>

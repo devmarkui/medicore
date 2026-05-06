@@ -1,278 +1,464 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="flex items-center justify-between mb-8">
-        <div>
-            <h1 class="text-3xl font-bold text-slate-900">Services & Categories</h1>
-            <p class="text-slate-500 mt-1">Manage clinic service tabs and items for the reception desk.</p>
-        </div>
-        <div class="flex gap-3">
-            <button id="addCategoryBtn" class="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg font-semibold hover:bg-blue-100 transition border border-blue-200">
-                + New Category
-            </button>
-            <button id="addItemBtn" class="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition">
-                + New Service Item
-            </button>
-        </div>
+<style>
+  :root {
+    --mc-50: #f0fdfa; --mc-100: #ccfbf1; --mc-200: #99f6e4;
+    --mc-500: #14b8a6; --mc-600: #0d9488; --mc-700: #0f766e;
+  }
+
+  .svc-tab-btn {
+    padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all .2s; border: none; background: transparent; color: #64748b;
+  }
+  .svc-tab-btn.active {
+    background: white; color: var(--mc-700); box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,.55); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+  }
+  .modal-panel {
+    background: white; border-radius: 20px; width: 100%; max-width: 500px;
+    padding: 36px; box-shadow: 0 25px 60px -12px rgba(0,0,0,.25); max-height: 90vh; overflow-y: auto;
+  }
+  .field-label { display: block; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .field-input {
+    width: 100%; padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 10px;
+    font-size: 14px; background: #f8fafc; transition: border-color .2s;
+    box-sizing: border-box;
+  }
+  .field-input:focus { outline: none; border-color: var(--mc-500); background: white; }
+  .btn-primary { background: var(--mc-600); color: white; padding: 12px 24px; border-radius: 12px; font-weight: 800; font-size: 13px; border: none; cursor: pointer; transition: background .2s; width: 100%; }
+  .btn-primary:hover { background: var(--mc-700); }
+  .badge-active { background: #dcfce7; color: #15803d; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge-inactive { background: #f1f5f9; color: #64748b; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+
+  .search-input { padding: 9px 14px 9px 36px; border: 1.5px solid #e2e8f0; border-radius: 10px; font-size: 13px; background: #f8fafc; }
+  .search-input:focus { outline: none; border-color: var(--mc-500); background: white; }
+</style>
+
+<div class="max-w-7xl mx-auto px-6 py-8">
+
+  <!-- Page Header -->
+  <div class="flex items-start justify-between mb-8">
+    <div>
+      <div class="flex items-center gap-2 mb-1">
+        <a href="{{ url_for('settings.settings_dashboard') }}" class="text-slate-400 hover:text-slate-600 text-sm font-medium">Settings</a>
+        <span class="text-slate-300">›</span>
+        <span class="text-slate-700 text-sm font-bold">Services Management</span>
+      </div>
+      <h1 class="text-3xl font-black text-slate-900">Services &amp; Categories</h1>
+      <p class="text-slate-500 mt-1">Manage clinic service tabs and items. Changes auto-appear on the Reception Desk.</p>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="openModal('categoryModal')" class="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:border-slate-300 hover:bg-slate-50 transition shadow-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+        New Category
+      </button>
+      <button onclick="openModal('itemModal')" class="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 text-slate-700 rounded-xl font-bold text-sm hover:border-slate-300 hover:bg-slate-50 transition shadow-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+        New Service Item
+    </div>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="grid grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Categories</p>
+      <p class="text-3xl font-black text-slate-900">{{ categories|length }}</p>
+      <p class="text-xs text-slate-400 mt-1">{{ categories|selectattr('is_active')|list|length }} active</p>
+    </div>
+    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Service Items</p>
+      <p class="text-3xl font-black text-teal-600">{{ all_items|length }}</p>
+      <p class="text-xs text-slate-400 mt-1">{{ all_items|selectattr('is_active')|list|length }} active</p>
+    </div>
+    <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Reception Desk Status</p>
+      <p class="text-sm font-black text-emerald-600 flex items-center gap-2 mt-2">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+        Dynamic &amp; Live
+      </p>
+      <p class="text-xs text-slate-400 mt-1">Changes reflect instantly</p>
+    </div>
+  </div>
+
+  <!-- Tab Switcher -->
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="flex border-b border-slate-100 bg-slate-50 px-2 py-2 gap-1">
+      <button class="svc-tab-btn active" onclick="switchTab('categories', this)">
+        🗂️ Service Categories ({{ categories|length }})
+      </button>
+      <button class="svc-tab-btn" onclick="switchTab('items', this)">
+        📋 Service Items ({{ all_items|length }})
+      </button>
     </div>
 
-    <!-- Tabs Container -->
-    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div class="flex border-b border-slate-200 bg-slate-50/50 p-1">
-            <button class="tab-btn px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 active" data-tab="categories">
-                Service Categories (Tabs)
-            </button>
-            <button class="tab-btn px-6 py-2.5 text-sm font-semibold rounded-xl transition-all duration-200 text-slate-500 hover:text-slate-700" data-tab="items">
-                Service Items (Products)
-            </button>
+    <!-- ── CATEGORIES PANEL ── -->
+    <div id="categories-panel" class="p-6">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="relative flex-1 max-w-xs">
+          <svg class="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input type="text" id="catSearch" class="search-input w-full" placeholder="Search categories..." oninput="filterCats(this.value)">
         </div>
+      </div>
 
-        <!-- Categories Panel -->
-        <div id="categories-panel" class="tab-panel p-6">
-            <div class="overflow-x-auto">
-                <table class="w-full text-left">
-                    <thead>
-                        <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100">
-                            <th class="px-4 py-4 font-semibold">Display Order</th>
-                            <th class="px-4 py-4 font-semibold">Category Name</th>
-                            <th class="px-4 py-4 font-semibold">Icon</th>
-                            <th class="px-4 py-4 font-semibold">Status</th>
-                            <th class="px-4 py-4 font-semibold text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-50">
-                        {% for category in categories %}
-                        <tr class="hover:bg-slate-50/50 transition">
-                            <td class="px-4 py-4">
-                                <span class="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-mono">{{ category.display_order }}</span>
-                            </td>
-                            <td class="px-4 py-4">
-                                <p class="font-bold text-slate-900">{{ category.category_name }}</p>
-                                <p class="text-xs text-slate-400">{{ category.description or 'No description' }}</p>
-                            </td>
-                            <td class="px-4 py-4">
-                                <span class="text-slate-500"><i class="{{ category.icon_class or 'icon-box' }}"></i></span>
-                                <span class="text-xs text-slate-400 ml-1">{{ category.icon_class or '-' }}</span>
-                            </td>
-                            <td class="px-4 py-4">
-                                {% if category.is_active %}
-                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active
-                                </span>
-                                {% else %}
-                                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Inactive
-                                </span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-4 text-right space-x-2">
-                                <button class="text-slate-400 hover:text-blue-600 transition p-1" title="Edit">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M18.364 4.364a9 9 0 1112.728 12.728A3.359 3.359 0 0118.364 4.364z" /></svg>
-                                </button>
-                                <form action="{{ url_for('settings.toggle_service_category', category_id=category.category_id) }}" method="POST" class="inline">
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                    <button type="submit" class="text-slate-400 hover:text-amber-600 transition p-1" title="Toggle Status">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                                    </button>
-                                </form>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- Items Panel -->
-        <div id="items-panel" class="tab-panel hidden p-6">
-            <div class="overflow-x-auto">
-                <table class="w-full text-left">
-                    <thead>
-                        <tr class="text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100">
-                            <th class="px-4 py-4 font-semibold">Code/ID</th>
-                            <th class="px-4 py-4 font-semibold">Item Name</th>
-                            <th class="px-4 py-4 font-semibold">Category</th>
-                            <th class="px-4 py-4 font-semibold">Price</th>
-                            <th class="px-4 py-4 font-semibold">Status</th>
-                            <th class="px-4 py-4 font-semibold text-right">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-50">
-                        {% for category in categories %}
-                          {% set outer_loop = loop %}
-                          {% with items = [] %}
-                            {# Note: In a real app, we'd pass items explicitly or have a helper. 
-                               The current routes load items into categories.items #}
-                            {% for item in category.items or [] %}
-                            <tr class="hover:bg-slate-50/50 transition">
-                                <td class="px-4 py-4">
-                                    <span class="bg-blue-50 text-blue-600 px-2 py-1 rounded text-xs font-mono">{{ item.item_code }}</span>
-                                </td>
-                                <td class="px-4 py-4">
-                                    <p class="font-bold text-slate-900">{{ item.item_name }}</p>
-                                    <p class="text-xs text-slate-400">{{ item.description or 'No extra info' }}</p>
-                                </td>
-                                <td class="px-4 py-4">
-                                    <span class="text-sm text-slate-600">{{ category.category_name }}</span>
-                                </td>
-                                <td class="px-4 py-4">
-                                    <span class="text-sm font-bold text-slate-900">Rs. {{ "%.2f"|format(item.price) }}</span>
-                                </td>
-                                <td class="px-4 py-4">
-                                    {% if item.is_active %}
-                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Active
-                                    </span>
-                                    {% else %}
-                                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
-                                        <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Inactive
-                                    </span>
-                                    {% endif %}
-                                </td>
-                                <td class="px-4 py-4 text-right space-x-2">
-                                    <button class="text-slate-400 hover:text-blue-600 transition p-1">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M18.364 4.364a9 9 0 1112.728 12.728A3.359 3.359 0 0118.364 4.364z" /></svg>
-                                    </button>
-                                    <form action="{{ url_for('settings.toggle_service_item', item_id=item.item_id) }}" method="POST" class="inline">
-                                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                                        <button type="submit" class="text-slate-400 hover:text-amber-600 transition p-1">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636" /></svg>
-                                        </button>
-                                    </form>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                          {% endwith %}
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
+      <div class="overflow-x-auto rounded-xl border border-slate-100">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-50/80">
+            <tr class="text-slate-400 text-xs uppercase tracking-wider">
+              <th class="px-4 py-3 font-bold">#</th>
+              <th class="px-4 py-3 font-bold">Category Name</th>
+              <th class="px-4 py-3 font-bold">Icon</th>
+              <th class="px-4 py-3 font-bold">Items</th>
+              <th class="px-4 py-3 font-bold">Status</th>
+              <th class="px-4 py-3 font-bold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="catTableBody" class="divide-y divide-slate-50">
+            {% for category in categories %}
+            {% set cat_items = all_items | selectattr('category_id', 'equalto', category.category_id) | list %}
+            <tr class="hover:bg-slate-50/60 transition cat-row" data-name="{{ category.category_name | lower }}">
+              <td class="px-4 py-3.5">
+                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-xs font-mono">{{ category.display_order }}</span>
+              </td>
+              <td class="px-4 py-3.5">
+                <p class="font-bold text-slate-900">{{ category.category_name }}</p>
+                <p class="text-xs text-slate-400">{{ category.description or 'No description' }}</p>
+              </td>
+              <td class="px-4 py-3.5">
+                <span class="text-xs text-slate-400 font-mono bg-slate-50 px-2 py-1 rounded">{{ category.icon_class or '—' }}</span>
+              </td>
+              <td class="px-4 py-3.5">
+                <span class="text-xs font-bold text-slate-700 bg-teal-50 px-2 py-1 rounded-full">{{ cat_items|length }} items</span>
+              </td>
+              <td class="px-4 py-3.5">
+                {% if category.is_active %}
+                  <span class="badge-active">Active</span>
+                {% else %}
+                  <span class="badge-inactive">Inactive</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3.5 text-right">
+                <div class="flex justify-end gap-1">
+                  <button onclick="openEditCategory({{ category.category_id }}, '{{ category.category_name | e }}', '{{ category.icon_class or '' | e }}', '{{ category.description or '' | e | replace('\n', ' ') }}')"
+                    class="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition" title="Edit">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                  </button>
+                  <form action="{{ url_for('settings.toggle_service_category', category_id=category.category_id) }}" method="POST" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="p-2 rounded-lg transition {% if category.is_active %}text-slate-400 hover:text-rose-500 hover:bg-rose-50{% else %}text-slate-400 hover:text-emerald-600 hover:bg-emerald-50{% endif %}"
+                      title="{{ 'Deactivate' if category.is_active else 'Activate' }}" onclick="return confirm('Toggle status of this category?')">
+                      {% if category.is_active %}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                      {% else %}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                      {% endif %}
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
+
+    <!-- ── ITEMS PANEL ── -->
+    <div id="items-panel" class="p-6 hidden">
+      <div class="flex items-center gap-3 mb-5 flex-wrap">
+        <div class="relative flex-1 max-w-xs">
+          <svg class="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input type="text" id="itemSearch" class="search-input w-full" placeholder="Search items..." oninput="filterItems(this.value)">
+        </div>
+        <select id="itemCatFilter" class="field-input !w-auto" onchange="filterItems(document.getElementById('itemSearch').value)">
+          <option value="">All Categories</option>
+          {% for category in categories %}
+            <option value="{{ category.category_name | lower }}">{{ category.category_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-slate-100">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-50/80">
+            <tr class="text-slate-400 text-xs uppercase tracking-wider">
+              <th class="px-4 py-3 font-bold">Code</th>
+              <th class="px-4 py-3 font-bold">Item Name</th>
+              <th class="px-4 py-3 font-bold">Category</th>
+              <th class="px-4 py-3 font-bold text-right">Price</th>
+              <th class="px-4 py-3 font-bold">Status</th>
+              <th class="px-4 py-3 font-bold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="itemTableBody" class="divide-y divide-slate-50">
+            {% for item in all_items %}
+            <tr class="hover:bg-slate-50/60 transition item-row"
+              data-name="{{ item.item_name | lower }}"
+              data-cat="{{ item.category_name | lower }}">
+              <td class="px-4 py-3.5">
+                <span class="bg-teal-50 text-teal-700 px-2 py-0.5 rounded text-xs font-mono font-bold">{{ item.item_code }}</span>
+              </td>
+              <td class="px-4 py-3.5">
+                <p class="font-bold text-slate-900">{{ item.item_name }}</p>
+                <p class="text-xs text-slate-400">{{ item.description or '' }}</p>
+              </td>
+              <td class="px-4 py-3.5">
+                <span class="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-full">{{ item.category_name }}</span>
+              </td>
+              <td class="px-4 py-3.5 text-right">
+                <span class="font-black text-slate-900">Rs. {{ "%.2f" | format(item.price) }}</span>
+                {% if item.linked_inventory_item_id %}
+                  <br><span class="text-[10px] text-teal-600 font-bold mt-0.5 inline-block">
+                    📦 {{ item.linked_inv_name or 'Linked' }} ({{ item.linked_inv_stock or 0 }} in stock)
+                  </span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3.5">
+                {% if item.is_active %}
+                  <span class="badge-active">Active</span>
+                {% else %}
+                  <span class="badge-inactive">Inactive</span>
+                {% endif %}
+              </td>
+              <td class="px-4 py-3.5 text-right">
+                <div class="flex justify-end gap-1 items-center">
+                  <a href="{{ url_for('settings.service_inventory_mapping', service_id=item.item_id) }}" 
+                     class="px-2 py-1 bg-teal-50 text-teal-700 rounded-md text-[10px] font-bold hover:bg-teal-100 transition-all border border-teal-100 flex items-center gap-1 mr-1"
+                     title="Map Inventory Usage">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                    MAP
+                  </a>
+                  <button onclick="openEditItem({{ item.item_id }}, '{{ item.item_code | e }}', '{{ item.item_name | e }}', {{ item.category_id }}, {{ item.price }}, '{{ item.description or '' | e | replace('\n', ' ') }}')"
+                    class="p-2 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition" title="Edit">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                  </button>
+                  <form action="{{ url_for('settings.toggle_service_item', item_id=item.item_id) }}" method="POST" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="p-2 rounded-lg transition {% if item.is_active %}text-slate-400 hover:text-rose-500 hover:bg-rose-50{% else %}text-slate-400 hover:text-emerald-600 hover:bg-emerald-50{% endif %}"
+                      title="{{ 'Deactivate' if item.is_active else 'Activate' }}" onclick="return confirm('Toggle status for this item?')">
+                      {% if item.is_active %}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                      {% else %}
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                      {% endif %}
+                    </button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- end main card -->
 </div>
 
+<!-- ══════════ MODALS ══════════ -->
+
 <!-- Add Category Modal -->
-<div id="categoryModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl w-full max-w-md p-8 shadow-2xl">
-        <div class="flex justify-between items-center mb-6">
-            <h3 class="text-xl font-bold text-slate-900">Add New Category</h3>
-            <button class="close-modal text-slate-400 hover:text-slate-600">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-        </div>
-        <form method="POST" action="{{ url_for('settings.add_service_category') }}" class="space-y-4">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Category Name *</label>
-                <input type="text" name="category_name" placeholder="e.g., Laboratory" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
-            </div>
-            <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Icon Class</label>
-                <input type="text" name="icon_class" placeholder="icon-flask, icon-stethoscope" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-            </div>
-            <div>
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
-                <textarea name="description" rows="3" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
-            </div>
-            <button type="submit" class="w-full py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-200">
-                Create Category
-            </button>
-        </form>
+<div id="categoryModal" style="display:none" class="modal-overlay" onclick="closeOnOverlay(event, 'categoryModal')">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-xl font-black text-slate-900">New Service Category</h3>
+      <button onclick="closeModal('categoryModal')" class="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
     </div>
+    <form method="POST" action="{{ url_for('settings.add_service_category') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div>
+        <label class="field-label">Category Name *</label>
+        <input type="text" name="category_name" class="field-input" placeholder="e.g., Laboratory" required autofocus>
+      </div>
+      <div>
+        <label class="field-label">Icon Class <span class="normal-case text-slate-400 font-normal">(optional)</span></label>
+        <input type="text" name="icon_class" class="field-input" placeholder="icon-flask">
+      </div>
+      <div>
+        <label class="field-label">Description <span class="normal-case text-slate-400 font-normal">(optional)</span></label>
+        <textarea name="description" rows="2" class="field-input" placeholder="Brief description of this category"></textarea>
+      </div>
+      <button type="submit" class="btn-primary mt-2">✓ Create Category</button>
+    </form>
+  </div>
+</div>
+
+<!-- Edit Category Modal -->
+<div id="editCategoryModal" style="display:none" class="modal-overlay" onclick="closeOnOverlay(event, 'editCategoryModal')">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-xl font-black text-slate-900">Edit Category</h3>
+      <button onclick="closeModal('editCategoryModal')" class="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="editCategoryForm" method="POST" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div>
+        <label class="field-label">Category Name *</label>
+        <input type="text" id="editCatName" name="category_name" class="field-input" required>
+      </div>
+      <div>
+        <label class="field-label">Icon Class</label>
+        <input type="text" id="editCatIcon" name="icon_class" class="field-input">
+      </div>
+      <div>
+        <label class="field-label">Description</label>
+        <textarea id="editCatDesc" name="description" rows="2" class="field-input"></textarea>
+      </div>
+      <button type="submit" class="btn-primary mt-2">✓ Save Changes</button>
+    </form>
+  </div>
 </div>
 
 <!-- Add Item Modal -->
-<div id="itemModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl w-full max-w-lg p-8 shadow-2xl">
-        <div class="flex justify-between items-center mb-6">
-            <h3 class="text-xl font-bold text-slate-900">Add Service Item</h3>
-            <button class="close-modal text-slate-400 hover:text-slate-600">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-            </button>
-        </div>
-        <form method="POST" action="{{ url_for('settings.add_service_item') }}" class="grid grid-cols-2 gap-4">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-            <div class="col-span-1">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Item Code *</label>
-                <input type="text" name="item_code" placeholder="OPD001" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
-            </div>
-            <div class="col-span-1">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Item Name *</label>
-                <input type="text" name="item_name" placeholder="General Consultation" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
-            </div>
-            <div class="col-span-1">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Category *</label>
-                <select name="category_id" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required>
-                    <option value="">Select Category</option>
-                    {% for cat in categories %}
-                      {% if cat.category_id != 1 %}
-                        <option value="{{ cat.category_id }}">{{ cat.category_name }}</option>
-                      {% endif %}
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-span-1">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Price (LKR) *</label>
-                <input type="number" name="price" placeholder="500.00" step="0.01" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent" required />
-            </div>
-            <div class="col-span-2">
-                <label class="block text-sm font-semibold text-slate-700 mb-1.5">Description</label>
-                <textarea name="description" rows="2" class="w-full px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
-            </div>
-            <div class="col-span-2 pt-2">
-                <button type="submit" class="w-full py-3 bg-green-600 text-white rounded-xl font-bold hover:bg-green-700 transition shadow-lg shadow-green-200">
-                    Add Service Item
-                </button>
-            </div>
-        </form>
+<div id="itemModal" style="display:none" class="modal-overlay" onclick="closeOnOverlay(event, 'itemModal')">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-xl font-black text-slate-900">New Service Item</h3>
+      <button onclick="closeModal('itemModal')" class="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
     </div>
+    <form method="POST" action="{{ url_for('settings.add_service_item') }}" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="field-label">Item Code *</label>
+          <input type="text" name="item_code" class="field-input" placeholder="LAB001" required>
+        </div>
+        <div>
+          <label class="field-label">Price (LKR) *</label>
+          <input type="number" name="price" class="field-input" placeholder="500.00" step="0.01" min="0" required>
+        </div>
+      </div>
+      <div>
+        <label class="field-label">Item Name *</label>
+        <input type="text" name="item_name" class="field-input" placeholder="e.g., Blood Test – CBC" required>
+      </div>
+      <div>
+        <label class="field-label">Category *</label>
+        <select name="category_id" class="field-input" required>
+          <option value="">Select a category…</option>
+          {% for cat in categories %}
+            {% if cat.category_name != 'All Services' %}
+              <option value="{{ cat.category_id }}">{{ cat.category_name }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Description <span class="normal-case text-slate-400 font-normal">(optional)</span></label>
+        <textarea name="description" rows="2" class="field-input" placeholder="Short item description"></textarea>
+      </div>
+      <button type="submit" class="btn-primary">✓ Add Service Item</button>
+    </form>
+  </div>
 </div>
 
+<!-- Edit Item Modal -->
+<div id="editItemModal" style="display:none" class="modal-overlay" onclick="closeOnOverlay(event, 'editItemModal')">
+  <div class="modal-panel" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-6">
+      <h3 class="text-xl font-black text-slate-900">Edit Service Item</h3>
+      <button onclick="closeModal('editItemModal')" class="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="editItemForm" method="POST" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="field-label">Item Code</label>
+          <input type="text" id="editItemCode" class="field-input opacity-60" disabled title="Code cannot be changed">
+        </div>
+        <div>
+          <label class="field-label">Price (LKR) *</label>
+          <input type="number" id="editItemPrice" name="price" class="field-input" step="0.01" min="0" required>
+        </div>
+      </div>
+      <div>
+        <label class="field-label">Item Name *</label>
+        <input type="text" id="editItemName" name="item_name" class="field-input" required>
+      </div>
+      <div>
+        <label class="field-label">Category *</label>
+        <select id="editItemCategory" name="category_id" class="field-input" required>
+          {% for cat in categories %}
+            {% if cat.category_name != 'All Services' %}
+              <option value="{{ cat.category_id }}">{{ cat.category_name }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Description</label>
+        <textarea id="editItemDesc" name="description" rows="2" class="field-input"></textarea>
+      </div>
+      <button type="submit" class="btn-primary">✓ Save Changes</button>
+    </form>
+  </div>
+</div>
+
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Tab switching
-    const tabs = document.querySelectorAll('.tab-btn');
-    const panels = document.querySelectorAll('.tab-panel');
+function switchTab(tab, btn) {
+  document.querySelectorAll('.svc-tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('categories-panel').classList.add('hidden');
+  document.getElementById('items-panel').classList.add('hidden');
+  document.getElementById(tab + '-panel').classList.remove('hidden');
+}
 
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => {
-                t.classList.remove('active', 'bg-white', 'shadow-sm', 'text-blue-600');
-                t.classList.add('text-slate-500');
-            });
-            tab.classList.add('active', 'bg-white', 'shadow-sm', 'text-blue-600');
-            tab.classList.remove('text-slate-500');
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+function closeOnOverlay(e, id) { if (e.target === document.getElementById(id)) closeModal(id); }
 
-            panels.forEach(p => p.classList.add('hidden'));
-            document.getElementById(tab.dataset.tab + '-panel').classList.remove('hidden');
-        });
-    });
+function openEditCategory(id, name, icon, desc) {
+  document.getElementById('editCategoryForm').action = '/settings/services/category/edit/' + id;
+  document.getElementById('editCatName').value = name;
+  document.getElementById('editCatIcon').value = icon;
+  document.getElementById('editCatDesc').value = desc;
+  openModal('editCategoryModal');
+}
 
-    // Modal logic
-    const categoryModal = document.getElementById('categoryModal');
-    const itemModal = document.getElementById('itemModal');
-    
-    document.getElementById('addCategoryBtn').addEventListener('click', () => categoryModal.classList.remove('hidden'));
-    document.getElementById('addItemBtn').addEventListener('click', () => itemModal.classList.remove('hidden'));
-    
-    document.querySelectorAll('.close-modal').forEach(btn => {
-        btn.addEventListener('click', () => {
-            categoryModal.classList.add('hidden');
-            itemModal.classList.add('hidden');
-        });
-    });
+function openEditItem(id, code, name, catId, price, desc) {
+  document.getElementById('editItemForm').action = '/settings/services/item/edit/' + id;
+  document.getElementById('editItemCode').value = code;
+  document.getElementById('editItemName').value = name;
+  document.getElementById('editItemPrice').value = price;
+  document.getElementById('editItemDesc').value = desc;
+  document.getElementById('editItemCategory').value = catId;
+  openModal('editItemModal');
+}
 
-    // Close on outside click
-    window.addEventListener('click', (e) => {
-        if (e.target === categoryModal) categoryModal.classList.add('hidden');
-        if (e.target === itemModal) itemModal.classList.add('hidden');
-    });
-});
+function filterCats(q) {
+  const lq = q.toLowerCase();
+  document.querySelectorAll('.cat-row').forEach(row => {
+    row.style.display = row.dataset.name.includes(lq) ? '' : 'none';
+  });
+}
+
+function filterItems(q) {
+  const lq = (q || '').toLowerCase();
+  const catFilter = document.getElementById('itemCatFilter').value;
+  document.querySelectorAll('.item-row').forEach(row => {
+    const matchName = row.dataset.name.includes(lq);
+    const matchCat = !catFilter || row.dataset.cat === catFilter;
+    row.style.display = (matchName && matchCat) ? '' : 'none';
+  });
+}
+
+// Flash messages auto-dismiss
+setTimeout(() => {
+  document.querySelectorAll('.flash-msg').forEach(el => el.style.opacity = '0');
+}, 3500);
+
 </script>
 
-<style>
-    .tab-btn.active { background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.05); color: #2563eb; }
-</style>
 {% endblock %}
-

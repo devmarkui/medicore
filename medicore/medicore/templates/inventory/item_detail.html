@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  :root { --teal:#0d9488; --red:#ef4444; --amber:#f59e0b; --blue:#3b82f6; --green:#10b981; }
+  .det-wrap { padding:24px 32px; max-width:1200px; margin:0 auto; }
+  .breadcrumb { font-size:11px; color:#94a3b8; font-weight:600; margin-bottom:16px; }
+  .breadcrumb a { color:var(--teal); text-decoration:none; }
+  .breadcrumb a:hover { text-decoration:underline; }
+
+  /* header card */
+  .item-hero { background:#fff; border:1px solid #e2e8f0; border-radius:14px;
+               padding:24px; margin-bottom:20px; display:flex; align-items:flex-start;
+               justify-content:space-between; gap:20px; flex-wrap:wrap; }
+  .hero-icon { width:60px; height:60px; border-radius:14px; background:#f8fafc;
+               display:flex; align-items:center; justify-content:center;
+               font-size:28px; flex-shrink:0; }
+  .hero-name { font-size:22px; font-weight:900; color:#0f172a; line-height:1.2; }
+  .hero-code { font-size:11px; font-family:monospace; color:#94a3b8; font-weight:600; margin-top:4px; }
+  .hero-generic { font-size:11px; color:var(--teal); font-weight:700; margin-top:2px; }
+  .hero-actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .h-btn { font-size:12px; font-weight:700; padding:8px 16px; border-radius:8px;
+           border:none; cursor:pointer; text-decoration:none; display:inline-flex;
+           align-items:center; gap:5px; transition:all .12s; }
+  .h-edit  { background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+  .h-edit:hover { background:#e2e8f0; }
+  .h-in    { background:#059669; color:#fff; }
+  .h-in:hover { background:#047857; }
+  .h-adj   { background:#d97706; color:#fff; }
+  .h-adj:hover { background:#b45309; }
+
+  /* stat grid */
+  .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:20px; }
+  .stat-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:16px 18px; }
+  .stat-label { font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; color:#94a3b8; }
+  .stat-val { font-size:28px; font-weight:900; line-height:1; margin-top:4px; }
+  .stat-sub { font-size:10px; color:#94a3b8; font-weight:600; margin-top:3px; }
+  .val-ok  { color:var(--green); }
+  .val-low { color:var(--amber); }
+  .val-oos { color:var(--red); }
+
+  /* info panels */
+  .two-col { display:grid; grid-template-columns:2fr 1fr; gap:14px; }
+  .panel { background:#fff; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; margin-bottom:14px; }
+  .panel-hdr { padding:12px 16px; border-bottom:1px solid #f1f5f9; background:#f8fafc;
+               font-size:10px; font-weight:800; text-transform:uppercase;
+               letter-spacing:.08em; color:#475569; }
+  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; }
+  .info-row { display:flex; flex-direction:column; padding:12px 16px; border-bottom:1px solid #f8fafc; }
+  .info-row:last-child { border-bottom:none; }
+  .info-label { font-size:9px; font-weight:800; text-transform:uppercase;
+                letter-spacing:.07em; color:#94a3b8; }
+  .info-val { font-size:13px; font-weight:700; color:#1e293b; margin-top:2px; }
+
+  /* transaction table */
+  .tx-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .tx-table thead th {
+    font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.07em;
+    color:#94a3b8; background:#f8fafc; padding:8px 14px; text-align:left;
+    border-bottom:1px solid #f1f5f9;
+  }
+  .tx-table tbody tr { border-bottom:1px solid #f8fafc; }
+  .tx-table tbody tr:last-child { border-bottom:none; }
+  .tx-table tbody td { padding:9px 14px; color:#475569; }
+  .type-badge { display:inline-block; font-size:9px; font-weight:800; text-transform:uppercase;
+                padding:2px 7px; border-radius:4px; letter-spacing:.04em; }
+  .type-in   { background:#ecfdf5; color:#059669; }
+  .type-out  { background:#fef2f2; color:#dc2626; }
+  .type-adj  { background:#fff7ed; color:#d97706; }
+  .type-sale { background:#eff6ff; color:#2563eb; }
+
+  .chip { display:inline-block; font-size:10px; font-weight:700; padding:3px 10px;
+          border-radius:20px; }
+  .chip-int  { background:#f0fdfa; color:var(--teal); border:1px solid #99f6e4; }
+  .chip-sale { background:#ecfdf5; color:var(--green); border:1px solid #a7f3d0; }
+  .chip-both { background:#faf5ff; color:#7c3aed; border:1px solid #ddd6fe; }
+  .chip-act  { background:#ecfdf5; color:var(--green); border:1px solid #a7f3d0; }
+  .chip-ina  { background:#f8fafc; color:#94a3b8; border:1px solid #e2e8f0; }
+
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-thumb { background:#e2e8f0; border-radius:4px; }
+</style>
+
+<div class="det-wrap">
+
+  <!-- Breadcrumb -->
+  <div class="breadcrumb">
+    <a href="{{ url_for('inventory.inventory_dashboard') }}">Dashboard</a> ›
+    <a href="{{ url_for('inventory.manage_items') }}">Manage Items</a> ›
+    {{ item.item_name }}
+  </div>
+
+  <!-- Hero -->
+  <div class="item-hero">
+    <div style="display:flex;gap:16px;align-items:flex-start;">
+      <div class="hero-icon">📦</div>
+      <div>
+        <div class="hero-name">{{ item.item_name }}</div>
+        <div class="hero-code">{{ item.item_code }}</div>
+        {% if item.generic_name %}<div class="hero-generic">{{ item.generic_name }}</div>{% endif %}
+        {% if item.brand_name %}<div style="font-size:11px;color:#64748b;font-weight:600;margin-top:2px;">Brand: {{ item.brand_name }}</div>{% endif %}
+      </div>
+    </div>
+    <div class="hero-actions">
+      <a href="{{ url_for('inventory.edit_item_form', item_id=item.item_id) }}" class="h-btn h-edit">✏ Edit Item</a>
+      <a href="{{ url_for('inventory.stock_in_page', item_id=item.item_id) }}" class="h-btn h-in">📥 Stock In</a>
+      <a href="{{ url_for('inventory.adjust_page', item_id=item.item_id) }}" class="h-btn h-adj">⚖ Adjust</a>
+    </div>
+  </div>
+
+  <!-- KPI Stats -->
+  {% set is_oos = item.quantity_on_hand <= 0 %}
+  {% set is_low = item.quantity_on_hand > 0 and item.quantity_on_hand <= item.minimum_stock_level %}
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Current Stock</div>
+      <div class="stat-val {% if is_oos %}val-oos{% elif is_low %}val-low{% else %}val-ok{% endif %}">
+        {{ item.quantity_on_hand }}
+      </div>
+      <div class="stat-sub">{{ item.unit }} on hand</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Reorder Level</div>
+      <div class="stat-val" style="color:#0f172a;">{{ item.minimum_stock_level }}</div>
+      <div class="stat-sub">{{ item.unit }} minimum</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Selling Price</div>
+      <div class="stat-val" style="font-size:20px;color:#0f172a;padding-top:4px;">
+        {% if item.selling_price %}LKR {{ "%.2f"|format(item.selling_price) }}{% else %}—{% endif %}
+      </div>
+      <div class="stat-sub">per {{ item.unit }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Status</div>
+      <div class="stat-val" style="font-size:16px;padding-top:8px;">
+        <span class="chip {% if item.status == 'Active' %}chip-act{% else %}chip-ina{% endif %}">
+          {{ item.status }}
+        </span>
+      </div>
+      <div class="stat-sub">
+        {% if is_oos %}⚠ Out of stock{% elif is_low %}⚠ Low stock{% else %}✓ Healthy{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Detail panels -->
+  <div class="two-col">
+
+    <!-- Left: Transaction History -->
+    <div>
+      <div class="panel">
+        <div class="panel-hdr">📋 Stock Transaction History (Last 20)</div>
+        <table class="tx-table">
+          <thead>
+            <tr>
+              <th>Type</th><th>Qty</th><th>Reference</th><th>Batch</th><th>By</th><th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in history %}
+            <tr>
+              <td>
+                <span class="type-badge
+                  {% if t.transaction_type=='IN' %}type-in
+                  {% elif t.transaction_type=='OUT' %}type-out
+                  {% elif t.transaction_type=='SALE' %}type-sale
+                  {% else %}type-adj{% endif %}">
+                  {{ t.transaction_type }}
+                </span>
+              </td>
+              <td style="font-weight:800;color:{% if t.quantity > 0 %}#059669{% else %}#dc2626{% endif %};">
+                {% if t.quantity > 0 %}+{% endif %}{{ t.quantity }}
+              </td>
+              <td style="font-size:11px;color:#64748b;">{{ t.reference_type or '—' }}</td>
+              <td style="font-size:11px;font-family:monospace;color:#94a3b8;">{{ t.batch_number or '—' }}</td>
+              <td style="font-size:11px;color:#64748b;">{{ t.first_name }} {{ t.last_name[0] }}.</td>
+              <td style="font-size:11px;color:#94a3b8;white-space:nowrap;">
+                {{ t.created_at.strftime('%d %b %Y %H:%M') if t.created_at else '—' }}
+              </td>
+            </tr>
+            {% endfor %}
+            {% if not history %}
+            <tr><td colspan="6" style="text-align:center;padding:24px;color:#94a3b8;font-size:12px;">No transactions yet.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right: Item Info -->
+    <div>
+      <div class="panel">
+        <div class="panel-hdr">ℹ Item Information</div>
+        <div>
+          <div class="info-row">
+            <span class="info-label">Category</span>
+            <span class="info-val">{{ item.category }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Usage Mode</span>
+            <span class="info-val">
+              <span class="chip {% if item.usage_mode=='Internal' %}chip-int{% elif item.usage_mode=='Sale' %}chip-sale{% else %}chip-both{% endif %}">
+                {{ item.usage_mode }}
+              </span>
+            </span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Buying Price</span>
+            <span class="info-val">{% if item.buying_price %}LKR {{ "%.2f"|format(item.buying_price) }}{% else %}—{% endif %}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Batch Number</span>
+            <span class="info-val" style="font-family:monospace;">{{ item.batch_number or '—' }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Expiry Date</span>
+            <span class="info-val" style="color:{% if item.expiry_date %}var(--blue){% else %}#94a3b8{% endif %};">
+              {{ item.expiry_date or '—' }}
+            </span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Storage Location</span>
+            <span class="info-val">{{ item.storage_location or '—' }}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Track Expiry</span>
+            <span class="info-val">{% if item.track_expiry %}Yes{% else %}No{% endif %}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Created</span>
+            <span class="info-val" style="font-size:11px;">
+              {{ item.created_at.strftime('%d %b %Y') if item.created_at else '—' }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <a href="{{ url_for('inventory.manage_items') }}"
+         style="display:block;text-align:center;padding:10px;font-size:11px;font-weight:700;
+                color:#64748b;text-decoration:none;border:1px solid #e2e8f0;border-radius:8px;
+                background:#fff;transition:all .12s;"
+         onmouseover="this.style.background='#f8fafc'"
+         onmouseout="this.style.background='#fff'">
+        ← Back to All Items
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
